@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hydra-synth harness</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0 }
+body {
+  background: #080808;
+  color: #d0d0d0;
+  font-family: 'Courier New', Courier, monospace;
+  padding: 14px;
+  font-size: 13px;
+}
+h1 { color: #7fff00; font-size: 15px; margin-bottom: 10px; letter-spacing: 1px }
+#canvas-wrap {
+  max-width: 800px;
+  margin: 0 auto;
+  border: 1px solid #1c1c1c;
+  background: #000;
+  line-height: 0;
+}
+canvas {
+  display: block;
+  width: 100%;
+  image-rendering: pixelated;
+}
+#info {
+  max-width: 800px;
+  margin: 10px auto 0;
+  background: #0e0e0e;
+  border: 1px solid #1c1c1c;
+  padding: 10px 14px;
+  line-height: 1.6;
+}
+#demo-category { color: #555; font-size: 10px; text-transform: uppercase; letter-spacing: 2px }
+#demo-name { color: #7fff00; font-size: 14px; font-weight: bold; margin: 3px 0 }
+#demo-desc { color: #888; font-size: 11px }
+#demo-exports { color: #444; font-size: 10px; margin-top: 4px }
+#controls {
+  max-width: 800px;
+  margin: 8px auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+button {
+  background: #111;
+  color: #7fff00;
+  border: 1px solid #2a2a2a;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+button:hover { background: #1a1a1a; border-color: #7fff00 }
+#progress-wrap { flex: 1; height: 2px; background: #1a1a1a }
+#progress-bar { height: 100%; background: #7fff00; width: 0 }
+#counter { color: #444; font-size: 11px; flex-shrink: 0 }
+#log {
+  max-width: 800px;
+  margin: 6px auto 0;
+  max-height: 100px;
+  overflow-y: auto;
+  background: #050505;
+  border: 1px solid #111;
+  padding: 6px 10px;
+  font-size: 10px;
+  color: #555;
+  line-height: 1.7;
+}
+#error-banner {
+  max-width: 800px;
+  margin: 10px auto;
+  background: #1a0505;
+  border: 1px solid #5c1a1a;
+  color: #ff6666;
+  padding: 12px;
+  display: none;
+}
+</style>
+</head>
+<body>
+
+<h1>▸ hydra-synth harness</h1>
+
+<div id="error-banner"></div>
+
+<div id="canvas-wrap">
+  <canvas id="canvas" width="800" height="450"></canvas>
+</div>
+
+<div id="info">
+  <div id="demo-category">—</div>
+  <div id="demo-name">Initialising…</div>
+  <div id="demo-desc"></div>
+  <div id="demo-exports"></div>
+</div>
+
+<div id="controls">
+  <button id="btn-prev">◀ prev</button>
+  <button id="btn-next">next ▶</button>
+  <button id="btn-pause">⏸ pause</button>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <div id="counter"></div>
+</div>
+
+<div id="log"></div>
+
+<!-- UMD bundle; exposes window.Hydra. Run `npm run build` if missing. -->
+<script src="../dist/hydra-synth.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Logging ───────────────────────────────────────────────────────────
+  const logEl = document.getElementById('log');
+  function log(msg, color) {
+    const d = document.createElement('div');
+    d.style.color = color || '#555';
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+    console.log(msg);
+  }
+  const ok  = msg => log('✓ ' + msg, '#7fff00');
+  const err = msg => log('✗ ' + msg, '#ff5555');
+  const inf = msg => log('  ' + msg, '#666');
+
+  function fatal(msg) {
+    const b = document.getElementById('error-banner');
+    b.style.display = 'block';
+    b.textContent = '✗ ' + msg;
+    err(msg);
+  }
+
+  // ── Guard: dist bundle must be loaded ────────────────────────────────
+  if (typeof Hydra === 'undefined') {
+    fatal(
+      'window.Hydra not found. The dist bundle is missing. ' +
+      'Run `npm run build` from the project root to generate dist/hydra-synth.js, ' +
+      'then refresh this page.'
+    );
+    return;
+  }
+  ok('dist/hydra-synth.js loaded — window.Hydra is available');
+
+  // ── Create Hydra instance ─────────────────────────────────────────────
+  let h, synth;
+  try {
+    h = new Hydra({
+      canvas:       document.getElementById('canvas'),
+      width:        800,
+      height:       450,
+      makeGlobal:   false,   // keep window clean
+      detectAudio:  false,   // no microphone needed for harness
+      autoLoop:     true,
+    });
+    synth = h.synth;
+    ok('Hydra instance created (makeGlobal:false, detectAudio:false)');
+  } catch (e) {
+    fatal('Failed to create Hydra instance: ' + e.message);
+    console.error(e);
+    return;
+  }
+
+  // ── Destructure the full public API ───────────────────────────────────
+  // All generator functions, outputs, and sources live on synth.
+  const {
+    // Source generators
+    osc, noise, shape, voronoi, gradient, solid, src, prev,
+    // Outputs
+    o0, o1, o2, o3,
+    // Source buffers
+    s0, s1,
+    // Control
+    render, hush, setFunction,
+  } = synth;
+
+  // Live time reference — synth.time is updated each tick
+  const t = () => synth.time;
+
+  ok('API destructured: all source generators, outputs o0–o3, sources s0–s3');
+  inf('synth.time updates each frame; use () => synth.time in callbacks');
+
+  // ── Register a custom GLSL transform (called once at startup) ─────────
+  // type:"src" — receives _st (vec2 coords), returns vec4 colour.
+  // Named inputs are available as GLSL uniforms alongside time/_st.
+  try {
+    setFunction({
+      name: 'myOsc',
+      type: 'src',
+      inputs: [
+        { name: 'freq',   type: 'float', default: 0.2 },
+        { name: 'sync',   type: 'float', default: 0.1 },
+        { name: 'offset', type: 'float', default: 0.0 },
+      ],
+      glsl: `
+        vec2 st = _st;
+        float r = sin((st.x - offset * 2.0 / freq + time * sync) * freq) * 0.5 + 0.5;
+        float g = sin((st.x + time * sync) * freq) * 0.5 + 0.5;
+        float b = sin((st.x + offset / freq + time * sync) * freq) * 0.5 + 0.5;
+        return vec4(r, g, b, 1.0);
+      `,
+    });
+    ok('setFunction("myOsc") registered — available as synth.myOsc(freq, sync, offset)');
+  } catch (e) {
+    err('setFunction failed: ' + e.message);
+  }
+
+  // ── Demo definitions ──────────────────────────────────────────────────
+  //
+  // Each demo's run() is called after hush() so every demo starts clean.
+  // Keep each run() self-contained: set outputs, then call render().
+
+  const demos = [
+
+    // ── Source generators ──────────────────────────────────────────────
+
+    {
+      category: 'Source Generators',
+      name: 'osc(freq, sync, offset)',
+      desc: 'Sine-wave oscillator. freq controls band density, sync controls animation speed, offset shifts phase. Four variations.',
+      exports: ['osc'],
+      run() {
+        osc(4,  0.1, 1.2).out(o0);
+        osc(20, 0.02, 0 ).out(o1);
+        osc(60, 0.0, 2.0).out(o2);
+        osc(8,  0.3, 0.8).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Source Generators',
+      name: 'noise(scale, offset)  &  voronoi(scale, speed, blending)',
+      desc: 'noise() → animated Perlin noise field. voronoi() → cellular diagram with speed and blending controls.',
+      exports: ['noise', 'voronoi'],
+      run() {
+        noise(3,  0.1).out(o0);
+        noise(10, 0.5).out(o1);
+        voronoi(5, 0.3, 0.3).out(o2);
+        voronoi(2, 1.0, 0.8).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Source Generators',
+      name: 'shape(sides, radius, smoothing)  |  gradient(speed)  |  solid(r,g,b,a)',
+      desc: 'shape() draws an n-sided polygon. gradient() produces a linear colour ramp. solid() fills with a flat RGBA colour.',
+      exports: ['shape', 'gradient', 'solid'],
+      run() {
+        shape(3, 0.4, 0.01).out(o0);
+        shape(6, 0.5, 0.05).out(o1);
+        gradient(0.2).out(o2);
+        solid(0.8, 0.2, 0.5, 1).out(o3);
+        render();
+      },
+    },
+
+    // ── Colour transforms ──────────────────────────────────────────────
+
+    {
+      category: 'Color Transforms',
+      name: 'invert(amount)  contrast(amount)  brightness(amount)  saturate(amount)',
+      desc: 'Classic per-pixel colour adjustments applied to the same osc() base. Amounts are floats (can also be functions).',
+      exports: ['invert', 'contrast', 'brightness', 'saturate'],
+      run() {
+        osc(4, 0.1, 1).invert(1).out(o0);
+        osc(4, 0.1, 1).contrast(2.5).out(o1);
+        osc(4, 0.1, 1).brightness(0.6).out(o2);
+        osc(4, 0.1, 1).saturate(3).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Color Transforms',
+      name: 'hue(hue)  colorama(amount)  shift(r,g,b,a)  color(r,g,b,a)',
+      desc: 'hue() rotates the hue wheel. colorama() cycles hue per-pixel. shift() adds an RGBA offset. color() multiplies RGBA.',
+      exports: ['hue', 'colorama', 'shift', 'color'],
+      run() {
+        osc(4, 0.1, 1).hue(0.4).out(o0);
+        osc(4, 0.1, 1).colorama(0.008).out(o1);
+        osc(4, 0.1, 1).shift(0.5, 0, 0, 0).out(o2);
+        osc(4, 0.1, 1).color(1, 0.5, 0.2, 1).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Color Transforms',
+      name: 'posterize(bins, gamma)  luma(threshold, tolerance)  thresh(threshold, tolerance)  sum(scale)',
+      desc: 'posterize() quantises colour into discrete bands. luma() selects pixels by luminance. thresh() produces binary output. sum() sums all channels.',
+      exports: ['posterize', 'luma', 'thresh', 'sum'],
+      run() {
+        noise(3).posterize(3, 0.6).out(o0);
+        gradient(0.3).luma(0.5, 0.1).out(o1);
+        gradient(0.3).thresh(0.5, 0.04).out(o2);
+        noise(5).sum(0.3).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Color Transforms',
+      name: 'r(scale, offset)  g(scale, offset)  b(scale, offset)  a(scale, offset)',
+      desc: 'Each function extracts and scales one RGBA channel. Useful for channel-routing and colour effects.',
+      exports: ['r', 'g', 'b', 'a'],
+      run() {
+        osc(4, 0.1, 1.2).r(1, 0).out(o0);
+        osc(4, 0.1, 1.2).g(1, 0).out(o1);
+        osc(4, 0.1, 1.2).b(1, 0).out(o2);
+        // alpha channel shown as greyscale
+        osc(4, 0.1, 1.2).a(1, 0).out(o3);
+        render();
+      },
+    },
+
+    // ── Coordinate transforms ──────────────────────────────────────────
+
+    {
+      category: 'Coordinate Transforms',
+      name: 'rotate(angle, speed)  scale(amount)  pixelate(x,y)  kaleid(nSides)',
+      desc: 'rotate() spins UV coordinates. scale() zooms in/out. pixelate() blocks to a grid. kaleid() mirrors n times around the centre.',
+      exports: ['rotate', 'scale', 'pixelate', 'kaleid'],
+      run() {
+        osc(4).rotate(0.8, 0.1).out(o0);
+        osc(4).scale(0.5).out(o1);
+        osc(8).pixelate(10, 10).out(o2);
+        osc(4, 0.1).kaleid(6).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Coordinate Transforms',
+      name: 'repeat(x,y)  repeatX(reps,offset)  scrollX(x,speed)  scrollY(y,speed)',
+      desc: 'repeat() tiles the image. repeatX/Y tiles one axis. scrollX/Y translates continuously — speed is tiles-per-second.',
+      exports: ['repeat', 'repeatX', 'repeatY', 'scrollX', 'scrollY'],
+      run() {
+        shape(4, 0.3).repeat(3, 3).out(o0);
+        osc(4).repeatX(5, 0.1).out(o1);
+        osc(4, 0.1).scrollX(0.5, 0.2).out(o2);
+        osc(4, 0.1).scrollY(0.5, 0.2).out(o3);
+        render();
+      },
+    },
+
+    // ── Combine operations ─────────────────────────────────────────────
+
+    {
+      category: 'Combine Operations',
+      name: 'add(src, amount)  sub(src, amount)  mult(src, amount)  blend(src, amount)',
+      desc: 'Two-source blending. add() is additive. sub() subtracts. mult() multiplies (AND-like). blend() linearly interpolates.',
+      exports: ['add', 'sub', 'mult', 'blend'],
+      run() {
+        osc(4, 0.1, 1).add(  noise(3), 0.5).out(o0);
+        osc(4, 0.1, 1).sub(  noise(3), 0.5).out(o1);
+        osc(4, 0.1, 1).mult( shape(4), 0.8).out(o2);
+        osc(4, 0.1, 1).blend(voronoi(5), 0.5).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Combine Operations',
+      name: 'diff(src)  layer(src)  mask(src)',
+      desc: 'diff() is absolute pixel difference. layer() alpha-composites using the source\'s alpha. mask() uses the source\'s luminance as an alpha mask.',
+      exports: ['diff', 'layer', 'mask'],
+      run() {
+        osc(4).diff(noise(3)).out(o0);
+        gradient().layer(osc().luma(0.5, 0.1)).out(o1);
+        osc(4, 0.1, 1).mask(shape(4, 0.5, 0.1)).out(o2);
+        solid(0.1, 0.5, 0.8).layer(shape(5, 0.4).mask(noise(3))).out(o3);
+        render();
+      },
+    },
+
+    // ── Modulate operations ────────────────────────────────────────────
+
+    {
+      category: 'Modulate Operations',
+      name: 'modulate(src, amount)  modulateScale(src, mult, offset)  modulateRotate(src, mult, offset)',
+      desc: 'modulate() displaces UV coords by the source\'s colour. modulateScale/Rotate warp zoom and rotation per-pixel — creates complex distortion.',
+      exports: ['modulate', 'modulateScale', 'modulateRotate'],
+      run() {
+        osc(4, 0.1).modulate(noise(3), 0.1).out(o0);
+        osc(4, 0.1).modulateScale(noise(3), 1).out(o1);
+        osc(4, 0.1).modulateRotate(noise(3), 1).out(o2);
+        voronoi(5, 0.3).modulate(osc(4, 0.1), 0.05).out(o3);
+        render();
+      },
+    },
+
+    {
+      category: 'Modulate Operations',
+      name: 'modulatePixelate()  modulateHue()  modulateRepeat()  modulateScrollX()',
+      desc: 'modulatePixelate() warps pixel grid size. modulateHue() displaces by hue difference. modulateRepeat() warps tiling. modulateScrollX/Y warps scroll.',
+      exports: ['modulatePixelate', 'modulateHue', 'modulateRepeat', 'modulateScrollX', 'modulateScrollY'],
+      run() {
+        osc(8).modulatePixelate(noise(3), 20).out(o0);
+        osc(4, 0.1, 1).modulateHue(osc(2), 2).out(o1);
+        shape(4, 0.4).modulateRepeat(noise(2), 3, 3, 0.5, 0.5).out(o2);
+        osc(4, 0.1).modulateScrollX(noise(3), 0.5).out(o3);
+        render();
+      },
+    },
+
+    // ── Time-based animation ───────────────────────────────────────────
+
+    {
+      category: 'Time & Animation',
+      name: 'Function callbacks — () => synth.time',
+      desc: 'Any numeric argument can be a function: it is re-evaluated every frame. Use closures over synth.time for animation. Arrays cycle through values over bpm.',
+      exports: ['osc (time callbacks)'],
+      run() {
+        osc(4, 0.1, 1.2)
+          .rotate(() => t() * 0.5)
+          .color(
+            () => Math.abs(Math.sin(t() * 0.7)),
+            0.4,
+            () => Math.abs(Math.cos(t() * 0.4))
+          )
+          .scale(() => 0.8 + Math.sin(t() * 1.3) * 0.15)
+          .out(o0);
+        render(o0);
+      },
+    },
+
+    // ── Feedback ──────────────────────────────────────────────────────
+
+    {
+      category: 'Feedback',
+      name: 'src(o0) — ping-pong frame feedback',
+      desc: 'src(oN) reads the *previous* frame of output N. Hydra double-buffers each output. Combining with scale/rotate creates a recursive zoom tunnel.',
+      exports: ['src (feedback loop)'],
+      run() {
+        src(o0)
+          .scale(0.98)
+          .rotate(0.004)
+          .add(shape(4, 0.05, 0.1), 0.4)
+          .out(o0);
+        render(o0);
+      },
+    },
+
+    // ── Custom transform ───────────────────────────────────────────────
+
+    {
+      category: 'Custom Transforms',
+      name: 'setFunction() — custom GLSL src "myOsc"',
+      desc: 'synth.setFunction(def) compiles a new GLSL function and attaches it to the synth API. "myOsc" was registered at startup. Type "src" receives _st (vec2), returns vec4.',
+      exports: ['setFunction', 'synth.myOsc (custom src generator)'],
+      run() {
+        synth.myOsc(10, 0.2, 0.8).out(o0);
+        synth.myOsc(5,  0.1, 0.4).rotate(0.2).out(o1);
+        synth.myOsc(20, 0.05, 1.2).kaleid(6).out(o2);
+        synth.myOsc(8,  0.15, 0.0).hue(0.3).out(o3);
+        render();
+      },
+    },
+
+    // ── Source buffers ─────────────────────────────────────────────────
+
+    {
+      category: 'Source Buffers',
+      name: 's0.initCanvas(width, height) — drawable 2D canvas',
+      desc: 'Returns a CanvasRenderingContext2D. Draw anything into it; src(s0) uploads it as a WebGL texture every frame.',
+      exports: ['s0.initCanvas', 'src'],
+      run() {
+        const ctx = s0.initCanvas(800, 450);
+        ctx.fillStyle = '#080808';
+        ctx.fillRect(0, 0, 800, 450);
+        // Title
+        ctx.fillStyle = '#7fff00';
+        ctx.font = 'bold 52px Courier New, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('hydra-synth', 400, 170);
+        // Subtitle
+        ctx.fillStyle = '#aaa';
+        ctx.font = '20px Courier New, monospace';
+        ctx.fillText('s0.initCanvas() → src(s0)', 400, 230);
+        // Note
+        ctx.fillStyle = '#444';
+        ctx.font = '14px Courier New, monospace';
+        ctx.fillText('draw into a 2D canvas, use as WebGL texture', 400, 275);
+        // Animated accent line redrawn each frame via synth.update
+        synth.update = () => {
+          ctx.clearRect(0, 330, 800, 30);
+          ctx.fillStyle = '#1a1a1a';
+          ctx.fillRect(0, 330, 800, 30);
+          const w = (Math.sin(t()) * 0.5 + 0.5) * 800;
+          ctx.fillStyle = '#7fff00';
+          ctx.fillRect(0, 335, w, 4);
+        };
+        src(s0).out(o0);
+        render(o0);
+      },
+    },
+
+    {
+      category: 'Source Buffers',
+      name: 's0.initVideo(url, opts) — external video texture',
+      desc: 'Loads a video as a WebGL texture, updated each frame. Requires network access. flipY:false corrects vertical orientation for some sources.',
+      exports: ['s0.initVideo', 'src'],
+      run() {
+        // Uses a publicly accessible looping mp4; may show blank until loaded or without network
+        s0.initVideo(
+          'https://media.giphy.com/media/26ufplp8yheSKUE00/giphy.mp4',
+          { flipY: false }
+        );
+        src(s0).modulateScale(noise(3), 0.3).out(o0);
+        render(o0);
+      },
+    },
+
+    {
+      category: 'Source Buffers',
+      name: 's0.initImage(url) — static image texture',
+      desc: 'Loads an image as a WebGL texture. Requires network access. Chain transforms on src(s0) just like any generator.',
+      exports: ['s0.initImage', 'src'],
+      run() {
+        s0.initImage(
+          'https://upload.wikimedia.org/wikipedia/commons/2/25/Hydra-Foto.jpg'
+        );
+        src(s0).kaleid(6).rotate(() => t() * 0.1).out(o0);
+        render(o0);
+      },
+    },
+
+    // ── Complex composition ────────────────────────────────────────────
+
+    {
+      category: 'Complex Composition',
+      name: 'Layered chain — solid + gradient + shape + modulate + diff',
+      desc: 'Full real-world chain demonstrating how multiple sources, combine, and coordinate ops compose into a single expression.',
+      exports: ['solid', 'gradient', 'shape', 'add', 'mult', 'diff', 'modulate', 'posterize', 'contrast', 'scroll'],
+      run() {
+        solid()
+          .add(
+            gradient(0.05).rotate(0.05, -0.2).posterize(2).contrast(0.6),
+            0.7
+          )
+          .mult(
+            shape(4)
+              .scale(0.8)
+              .scrollX(0.01)
+              .rotate(0.2, 0.06)
+              .add(gradient(3).contrast(0.6), 0.5)
+          )
+          .diff(
+            shape(500).modulate(shape(4)).scale(1.5)
+          )
+          .out(o0);
+        render(o0);
+      },
+    },
+
+  ]; // end demos
+
+  // ── Demo runner ───────────────────────────────────────────────────────
+
+  const DEMO_MS = 5000;
+  let current = 0;
+  let paused  = false;
+  let start   = Date.now();
+
+  const categoryEl  = document.getElementById('demo-category');
+  const nameEl      = document.getElementById('demo-name');
+  const descEl      = document.getElementById('demo-desc');
+  const exportsEl   = document.getElementById('demo-exports');
+  const counterEl   = document.getElementById('counter');
+  const progressBar = document.getElementById('progress-bar');
+
+  function runDemo(i) {
+    current = i;
+    const demo = demos[i];
+
+    categoryEl.textContent = demo.category;
+    nameEl.textContent     = demo.name;
+    descEl.textContent     = demo.desc;
+    exportsEl.textContent  = demo.exports
+      ? 'exports: ' + demo.exports.join(', ')
+      : '';
+    counterEl.textContent  = (i + 1) + ' / ' + demos.length;
+
+    // Reset per-demo update callback before calling hush+run
+    synth.update = () => {};
+
+    try {
+      hush();
+      demo.run();
+      ok('Demo ' + (i + 1) + '/' + demos.length + ': ' + demo.name);
+    } catch (e) {
+      err('Demo ' + (i + 1) + ' error: ' + e.message);
+      console.error(e);
+    }
+
+    start = Date.now();
+  }
+
+  // Smooth progress bar + auto-advance (uses rAF, independent of Hydra loop)
+  function tick() {
+    if (!paused) {
+      const pct = Math.min(((Date.now() - start) / DEMO_MS) * 100, 100);
+      progressBar.style.width = pct + '%';
+      if (Date.now() - start >= DEMO_MS) {
+        runDemo((current + 1) % demos.length);
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // Controls
+  document.getElementById('btn-prev').onclick = () =>
+    runDemo((current - 1 + demos.length) % demos.length);
+
+  document.getElementById('btn-next').onclick = () =>
+    runDemo((current + 1) % demos.length);
+
+  document.getElementById('btn-pause').onclick = function () {
+    paused = !paused;
+    this.textContent = paused ? '▶ play' : '⏸ pause';
+    if (!paused) start = Date.now();
+  };
+
+  // ── Start ─────────────────────────────────────────────────────────────
+  inf(demos.length + ' demos ready — auto-advancing every ' + (DEMO_MS / 1000) + 's');
+  runDemo(0);
+  requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>

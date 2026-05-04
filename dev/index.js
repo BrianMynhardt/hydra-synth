@@ -19,10 +19,26 @@ function init () {
 // //  exampleCustomCanvas()
 
 
+window.hydra = new Hydra({detectAudio:false, makeGlobal: true, matchMedia: true})
+setResolution(2000, 980)
 
-window.hydra = new Hydra({detectAudio:false, makeGlobal: true})
+ var shapes = [
+    shape(4)
+      .scale(1, 0.5, [0.5, 1, 2])
+      .scrollX(0.3),
+    shape(4)
+      .scale(1, 0.5, [0.5, 1, 2].smooth(0.5))
+      .scrollX(0.0),
+    shape(4)
+      .scale(1, 0.5, [0.5, 1, 2].smooth())
+      .scrollX(-0.3),
+  ]
 
-osc().out()
+  solid()
+    .add(shapes[0])
+    .add(shapes[1])
+    .add(shapes[2])
+    .out(o0)
 // console.log(hydra)
 // window.hydra = hydra
 // // //osc().out()

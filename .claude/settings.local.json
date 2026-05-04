@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node harness/index.js)",
+      "Bash(kill %1)",
+      "PowerShell(\\($env:PATH -split ';'\\) | Where-Object { $_ -ne '' } | Select-Object -First 30)"
+    ]
+  }
+}
