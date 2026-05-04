@@ -1,12 +1,18 @@
-# hydra-synth dev harness
+# hydra-synth Harness
 
-A self-contained development harness for exploring and debugging the `hydra-synth` library.
-No test framework is used — this is a plain script that calls the public API and renders the
-results visually.
+This directory contains two complementary systems:
 
-## What it does
+1. **Dev harness** — a visual debugging tool for the library (`index.js` + `browser.html`)
+2. **Agent harness** — structural validation, documentation, and constraints for AI agents
+   and human contributors
 
-**`harness/index.js`** — Node.js entry point (run this first)
+---
+
+## Part 1 — Dev Harness (Visual Debugging)
+
+### What it does
+
+**`harness/index.js`** — Node.js entry point
 
 1. Imports `src/glsl/glsl-functions.js` directly in Node and prints every defined GLSL
    transform (name, type, input signatures, defaults) — no browser required.
@@ -17,22 +23,10 @@ results visually.
 
 **`harness/browser.html`** — Visual browser harness
 
-Opens automatically at `http://localhost:3333`. Exercises 19 demos that cycle every 5 s:
+Opens at `http://localhost:3333`. Cycles through 19 demos covering every major transform
+category. Use **prev / next** buttons to jump, or **pause** to hold a demo.
 
-| Category | Exports exercised |
-|---|---|
-| Source Generators | `osc`, `noise`, `voronoi`, `shape`, `gradient`, `solid` |
-| Color Transforms | `invert`, `contrast`, `brightness`, `saturate`, `hue`, `colorama`, `shift`, `color`, `posterize`, `luma`, `thresh`, `sum`, `r`, `g`, `b`, `a` |
-| Coordinate Transforms | `rotate`, `scale`, `pixelate`, `kaleid`, `repeat`, `repeatX`, `scrollX`, `scrollY` |
-| Combine | `add`, `sub`, `mult`, `blend`, `diff`, `layer`, `mask` |
-| Modulate | `modulate`, `modulateScale`, `modulateRotate`, `modulatePixelate`, `modulateHue`, `modulateRepeat`, `modulateScrollX` |
-| Time & Animation | function callbacks `() => synth.time` |
-| Feedback | `src(o0)` ping-pong feedback loop |
-| Custom Transforms | `setFunction()` + custom `myOsc` (type: `src`) |
-| Source Buffers | `s0.initCanvas()`, `s0.initVideo()`, `s0.initImage()` |
-| Complex Composition | multi-step chained expression |
-
-## Prerequisites
+### Prerequisites
 
 The browser harness loads the pre-built UMD bundle. Build it once:
 
@@ -40,57 +34,121 @@ The browser harness loads the pre-built UMD bundle. Build it once:
 npm run build
 ```
 
-This writes `dist/hydra-synth.js`. You only need to rebuild if you change source files.
-
-## How to run
+### How to run
 
 ```sh
-# From the project root:
 npm run harness
-# …or directly:
-node harness/index.js
+# Then open http://localhost:3333
 ```
 
-Then open **http://localhost:3333** in a browser.
-
-The Node.js output prints to your terminal immediately. The browser harness starts cycling
-through demos automatically. Use the **prev / next** buttons to jump, or **pause** to hold
-on a demo.
-
-## How to add new debug cases
+### Adding new demos
 
 1. Open `harness/browser.html` and find the `const demos = [...]` array.
-2. Add a new object following this shape:
+2. Add a new entry:
 
    ```js
    {
-     category: 'My Category',            // shown in the UI header
-     name: 'myNewDemo()',                 // demo title
-     desc: 'What this exercises.',        // shown in the UI body
-     exports: ['functionA', 'functionB'], // informational only
+     category: 'My Category',
+     name: 'myNewDemo()',
+     desc: 'What this exercises.',
+     exports: ['functionA', 'functionB'],
      run() {
        osc(4).myNewDemo().out(o0);
        render(o0);
      },
-   },
+   }
    ```
 
-3. Refresh the browser — no build step needed for the harness HTML itself.
+3. Refresh the browser — no rebuild needed for the harness HTML.
 
-**Tips:**
-- `hush()` is called automatically before each `run()` — no need to clean up yourself.
-- `synth.update = dt => {}` is reset before each demo; set it inside `run()` for
-  per-frame JS logic (e.g. updating a canvas drawing in the `initCanvas` demo).
-- All generator args accept either a number or a `() => number` function for live
-  animation: `osc(() => synth.time * 2)`.
-- To add a custom GLSL transform, call `setFunction(def)` once outside the demos array
-  (it throws if called twice with the same name). The registered function is then
-  available as `synth.myFnName(...)`.
+---
 
-## Notes
+## Part 2 — Agent Harness
 
-- `s0.initVideo()` and `s0.initImage()` demos require internet access; the canvas may
-  be blank for a few seconds while the asset loads.
-- The harness uses `makeGlobal: false` so it does not pollute `window`. All API calls
-  go through the destructured `synth.*` namespace.
-- The HTTP server (port 3333) only binds to `127.0.0.1` — it is not accessible remotely.
+### What it is and why it exists
+
+The agent harness is a set of documents and scripts that give any AI agent (or new human
+contributor) the context, constraints, and feedback loops needed to work reliably on this
+codebase without breaking its architectural invariants.
+
+Without this harness, an agent would need to re-derive the codebase's conventions from
+scratch on every session — and would likely miss important non-obvious constraints (e.g.
+the `extendTransforms` concat bug, the browserify/ESM dual-mode setup, the ping-pong FBO
+invariant). The harness encodes that knowledge durably.
+
+### Onboarding a new agent
+
+**Start here:** Read [AGENTS.md](../AGENTS.md) at the project root. It contains:
+- Project purpose and architecture overview
+- Directory map (every file explained)
+- Which files an agent may and may not modify
+- Naming conventions and coding style rules
+- Module format requirements
+- Patterns that must be preserved
+
+Then read, in order:
+1. `harness/constraints.md` — rules that must never be violated
+2. `harness/context/glossary.md` — domain terms
+3. `harness/context/adr.md` — why key design decisions were made
+4. `harness/findings.md` — known bugs to avoid accidentally "fixing" or stepping on
+
+### Running the structural validator
+
+```sh
+npm run harness:validate
+```
+
+This runs `harness/validate.js`, which checks three structural rules:
+
+| Rule | What it checks |
+|------|---------------|
+| 1 | All GLSL transform definitions in `glsl-functions.js` have required fields and valid types |
+| 2 | `src/index.js` is correctly configured as the CJS/browserify bridge |
+| 3 | Source files in `src/` are within line-count limits |
+
+Exit code 0 = all pass. Exit code 1 = one or more fail.
+
+Run this after any change to `src/` before committing.
+
+### Running the garbage collection prompt
+
+Periodically (after significant PRs or monthly), run the garbage collection agent:
+
+1. Open a new agent session.
+2. Paste the full prompt from `harness/gc-prompt.md`.
+3. The agent reads source files and produces a Markdown decay report.
+4. Save the report to `harness/gc-reports/YYYY-MM-DD.md`.
+5. Add any new findings to `harness/findings.md`.
+
+The GC prompt checks for documentation drift, undetected constraint violations, structural
+inconsistencies, and stale findings.
+
+### Extending the harness when new patterns emerge
+
+When a pattern solidifies into a convention:
+
+1. **Document the pattern** in `harness/context/adr.md` as a new ADR.
+2. **Add a glossary entry** in `harness/context/glossary.md` if a new term is introduced.
+3. **Add a constraint** in `harness/constraints.md` if the pattern must never be violated.
+4. **Add a validator rule** in `harness/validate.js` if the constraint is machine-checkable.
+5. **Update AGENTS.md** if the directory map, file permissions, or coding style changes.
+
+When a finding is fixed:
+- Move the entry in `harness/findings.md` from "Active Findings" to "Resolved Findings".
+- Reference the PR that fixed it.
+
+---
+
+## File Index
+
+| File | Purpose |
+|------|---------|
+| `index.js` | Dev harness Node entry: introspection + HTTP server |
+| `browser.html` | Dev harness: visual WebGL demo runner (19 demos) |
+| `validate.js` | Structural linter (`npm run harness:validate`) |
+| `constraints.md` | Architectural rules that must never be violated |
+| `findings.md` | Bugs and improvement opportunities (log, do not fix here) |
+| `gc-prompt.md` | Agent prompt for periodic entropy/decay detection |
+| `README.md` | This file |
+| `context/adr.md` | Architecture Decision Records |
+| `context/glossary.md` | Domain term glossary |

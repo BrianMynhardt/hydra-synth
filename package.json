@@ -19,7 +19,8 @@
     "dev-ssl": "budo ./dev/index.js --ssl --open --live --port 8000 --",
     "dev": "budo ./dev/index.js --open --live --port 8000 -- -p esmify",
     "build": "browserify ./src/index.js -p esmify --standalone Hydra > dist/hydra-synth.js",
-    "harness": "node harness/index.js"
+    "harness": "node harness/index.js",
+    "harness:validate": "node harness/validate.js"
   },
   "repository": {
     "type": "git",
