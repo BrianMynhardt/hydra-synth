@@ -10,6 +10,8 @@ import ArrayUtils from './lib/array-utils.js'
 import Sandbox from './eval-sandbox.js'
 import Generator from './generator-factory.js'
 import regl from 'regl'
+import MidiManager from './lib/midi-manager.js'
+import LPD8 from './lib/devices/lpd8.js'
 // const window = global.window
 
 
@@ -27,6 +29,8 @@ class HydraRenderer {
     makeGlobal = true,
     autoLoop = true,
     detectAudio = true,
+    detectMidi = false,
+    midiOptions = {},
     enableStreamCapture = true,
     canvas,
     precision,
@@ -41,6 +45,8 @@ class HydraRenderer {
     this.height = height
     this.renderAll = false
     this.detectAudio = detectAudio
+    this.detectMidi = detectMidi
+    this.midiOptions = midiOptions
 
     this._initCanvas(canvas)
 
@@ -62,7 +68,8 @@ class HydraRenderer {
       update: (dt) => {},// user defined update function
       afterUpdate: (dt) => {},// user defined function run after update
       hush: this.hush.bind(this),
-      tick: this.tick.bind(this)
+      tick: this.tick.bind(this),
+      midi: null
     }
 
     if (makeGlobal) window.loadScript = this.loadScript
@@ -120,6 +127,7 @@ class HydraRenderer {
     }
 
     if(detectAudio) this._initAudio()
+    if(detectMidi) this._initMidi()
 
     if(autoLoop) loop(this.tick.bind(this)).start()
 
@@ -227,6 +235,14 @@ class HydraRenderer {
       //   }
       // }
     })
+  }
+
+  _initMidi () {
+    const manager = new MidiManager({ deviceClasses: [LPD8], ...this.midiOptions })
+    this.synth.midi = manager
+    manager.init().catch(err =>
+      console.warn('[hydra-synth] MIDI unavailable:', err)
+    )
   }
 
   // create main output canvas and add to screen
@@ -425,6 +441,7 @@ class HydraRenderer {
     try {
     this.sandbox.tick()
     if(this.detectAudio === true) this.synth.a.tick()
+    if(this.detectMidi && this.synth.midi) this.synth.midi.tick(dt)
   //  let updateInterval = 1000/this.synth.fps // ms
     this.sandbox.set('time', this.synth.time += dt * 0.001 * this.synth.speed)
     this.timeSinceLastUpdate += dt

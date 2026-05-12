@@ -16,7 +16,7 @@
   },
   "unpkg": "./dist/hydra-synth.js",
   "scripts": {
-    "dev-ssl": "budo ./dev/index.js --ssl --open --live --port 8000 --",
+    "dev-ssl": "budo ./dev/index.js --ssl --open --live --port 8000 -- -p esmify",
     "dev": "budo ./dev/index.js --open --live --port 8000 -- -p esmify",
     "build": "browserify ./src/index.js -p esmify --standalone Hydra > dist/hydra-synth.js",
     "harness": "node harness/index.js",

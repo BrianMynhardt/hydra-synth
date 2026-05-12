@@ -2,7 +2,7 @@
 const Hydra = require('./../')
 // import Hydra from './../src/index.js'
 const loop = require('raf-loop')
-const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas } = require('./examples.js')
+const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo } = require('./examples.js')
 
 // console.log('HYDRA', Hydra)
 // const HydraShaders = require('./../shader-generator.js')
@@ -19,29 +19,12 @@ function init () {
 // //  exampleCustomCanvas()
 
 
-window.hydra = new Hydra({detectAudio:false, makeGlobal: true, matchMedia: true})
+window.hydra = new Hydra({detectAudio:false, detectMidi: true, makeGlobal: true, matchMedia: true})
 setResolution(2000, 980)
 
- var shapes = [
-    shape(4)
-      .scale(1, 0.5, [0.5, 1, 2])
-      .scrollX(0.3),
-    shape(4)
-      .scale(1, 0.5, [0.5, 1, 2].smooth(0.5))
-      .scrollX(0.0),
-    shape(4)
-      .scale(1, 0.5, [0.5, 1, 2].smooth())
-      .scrollX(-0.3),
-  ]
 
-  solid()
-    .add(shapes[0])
-    .add(shapes[1])
-    .add(shapes[2])
-    .out(o0)
-// console.log(hydra)
-// window.hydra = hydra
-// // //osc().out()
+// osc(10,2).mult(shape(4,0.1,2).kaleid(3)).repeat(4).out()
+midiDemo()
 // exampleVideo()
 // exampleResize()
 //nonGlobalCanvas()

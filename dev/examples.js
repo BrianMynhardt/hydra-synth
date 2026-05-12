@@ -5,7 +5,8 @@ module.exports = {
   fugitiveGeometry: fugitiveGeometry,
   exampleVideo: exampleVideo,
   exampleResize: exampleResize,
-  nonGlobalCanvas: nonGlobalCanvas
+  nonGlobalCanvas: nonGlobalCanvas,
+  midiDemo: midiDemo
 }
 
 function exampleResize() {
@@ -282,4 +283,52 @@ function exampleSmoothing() {
 
 function exampleSetResolution() {
   setResolution(20, 20)
+}
+
+function midiDemo () {
+  setTimeout(() => {
+    console.log('[midiDemo] MIDI inputs:', midi.devices.map(d => d.name))
+    console.log('[midiDemo] Active controller:', midi.controller ? midi.controller.name : 'none')
+  }, 500)
+
+  let hushed = false
+  midi.pad(0).onTrigger(() => {
+    if (hushed) { runSketch() } else { hush() }
+    hushed = !hushed
+  })
+
+  let kSides = 3
+  midi.pad(1).onTrigger(() => {
+    kSides = (kSides % 8) + 1
+  })
+
+  function runSketch () {
+    osc(
+      () => midi.knob(0) * 59 + 1,
+      0.1,
+      () => midi.knob(7) * Math.PI * 2
+    )
+      .rotate(
+        () => midi.knob(1, { smooth: 0.9 }) * 4
+      )
+      .kaleid(() => kSides)
+      .scale(
+        () => midi.pad(2).velocity * 0.6 + 0.4
+      )
+      .posterize(8, 0.6)
+      .hue(() => midi.knob(4, { smooth: 0.9 }))
+      .saturate(() => midi.knob(5, { smooth: 0.9 }) * 3)
+      .brightness(() => midi.knob(6, { smooth: 0.9 }) * 2)
+      .modulateHue(src(o0).scale(1.01), 1)
+      // .layer(
+      //   osc(4, 0.5, 2).mask(shape(
+      //     () => Math.floor(midi.knob(3) * 3) + 1,
+      //     0.5,
+      //     0.02
+      //   )).kaleid(() => kSides).scroll( scrollX = 0.5, scrollY = 0.5, 0.1, 0.1 )
+      // )
+      .out(o0)
+  }
+
+  runSketch()
 }
