@@ -6,7 +6,9 @@ module.exports = {
   exampleVideo: exampleVideo,
   exampleResize: exampleResize,
   nonGlobalCanvas: nonGlobalCanvas,
-  midiDemo: midiDemo
+  midiDemo: midiDemo,
+  // demonstrates mic capture, stream switching, and FFT/beat-reactive visuals
+  audioDemo: audioDemo
 }
 
 function exampleResize() {
@@ -285,6 +287,18 @@ function exampleSetResolution() {
   setResolution(20, 20)
 }
 
+function audioDemo () {
+  document.addEventListener('click', () => { a.initStream() }, { once: true })
+  
+  osc(() => a.fft[0] * 40 + 2, 0.1, 0.8)
+    .rotate(() => a.fft[1] * 3)
+    .color(() => a.fft[2] * 2, 0.5, 1)
+    .mult(solid(1, 1, 1), () => a.isBeat ? 0.3 : 0)
+    .out()
+
+  a.setSmooth(0.8)
+}
+
 function midiDemo () {
   setTimeout(() => {
     console.log('[midiDemo] MIDI inputs:', midi.devices.map(d => d.name))
@@ -315,7 +329,7 @@ function midiDemo () {
       .scale(
         () => midi.pad(2).velocity * 0.6 + 0.4
       )
-      .posterize(8, 0.6)
+      .posterize(4, 0.6)
       .hue(() => midi.knob(4, { smooth: 0.9 }))
       .saturate(() => midi.knob(5, { smooth: 0.9 }) * 3)
       .brightness(() => midi.knob(6, { smooth: 0.9 }) * 2)
@@ -327,7 +341,7 @@ function midiDemo () {
       //     0.02
       //   )).kaleid(() => kSides).scroll( scrollX = 0.5, scrollY = 0.5, 0.1, 0.1 )
       // )
-      .out(o0)
+      .out(o0) 
   }
 
   runSketch()
