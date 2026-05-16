@@ -46,14 +46,23 @@ class MidiManager {
 
   knob (index, options) {
     const ctrl = this.controller
+    let value
     if (options && options.smooth !== undefined) {
       if (!this._smoothState[index]) {
         const raw = ctrl ? (ctrl.knobs[index] ?? 0) : 0
         this._smoothState[index] = { smoothed: raw, factor: options.smooth }
       }
-      return this._smoothState[index].smoothed
+      value = this._smoothState[index].smoothed
+    } else {
+      value = ctrl ? (ctrl.knobs[index] ?? 0) : 0
     }
-    return ctrl ? (ctrl.knobs[index] ?? 0) : 0
+    if (options && (options.min !== undefined || options.max !== undefined)) {
+      const min = options.min ?? 0
+      const max = options.max ?? 1
+      const mapped = min + (max - min) * value
+      return options.step ? Math.round(mapped) : mapped
+    }
+    return value
   }
 
   pad (index) {
