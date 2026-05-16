@@ -47,6 +47,7 @@ class HydraRenderer {
     this.detectAudio = detectAudio
     this.detectMidi = detectMidi
     this.midiOptions = midiOptions
+    this.makeGlobal = makeGlobal
 
     this._initCanvas(canvas)
 
@@ -133,6 +134,9 @@ class HydraRenderer {
 
     // final argument is properties that the user can set, all others are treated as read-only
     this.sandbox = new Sandbox(this.synth, makeGlobal, ['speed', 'update', 'afterUpdate', 'bpm', 'fps'])
+
+    if(detectAudio) this.sandbox.add('a')
+    if(detectMidi) this.sandbox.add('midi')
   }
 
   eval(code) {
@@ -218,22 +222,10 @@ class HydraRenderer {
   }
 
   _initAudio () {
-    const that = this
     this.synth.a = new Audio({
       numBins: 4,
-      parentEl: this.canvas.parentNode
-      // changeListener: ({audio}) => {
-      //   that.a = audio.bins.map((_, index) =>
-      //     (scale = 1, offset = 0) => () => (audio.fft[index] * scale + offset)
-      //   )
-      //
-      //   if (that.makeGlobal) {
-      //     that.a.forEach((a, index) => {
-      //       const aname = `a${index}`
-      //       window[aname] = a
-      //     })
-      //   }
-      // }
+      parentEl: this.canvas.parentNode,
+      makeGlobal: this.makeGlobal
     })
   }
 

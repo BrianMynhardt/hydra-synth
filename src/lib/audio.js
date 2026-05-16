@@ -7,28 +7,39 @@ class Audio {
     smooth = 0.4,
     max = 15,
     scale = 10,
+    fftSize = 1024,
+    beatThreshold = 40,
+    beatHoldFrames = 20,
+    autoMic = false,
+    makeGlobal = true,
     isDrawing = false,
     parentEl = document.body
-  }) {
+  } = {}) {
     this.vol = 0
     this.scale = scale
     this.max = max
     this.cutoff = cutoff
     this.smooth = smooth
+    this.isBeat = false
+    this._fftSize = fftSize
+    this._makeGlobal = makeGlobal
+    this._context = null
+    this._meyda = null
+    this._sourceNode = null
+    this._stream = null
+
     this.setBins(numBins)
 
     // beat detection from: https://github.com/therewasaguy/p5-music-viz/blob/gh-pages/demos/01d_beat_detect_amplitude/sketch.js
     this.beat = {
-      holdFrames: 20,
-      threshold: 40,
-      _cutoff: 0, // adaptive based on sound state
+      holdFrames: beatHoldFrames,
+      threshold: beatThreshold,
+      _cutoff: 0,
       decay: 0.98,
-      _framesSinceBeat: 0 // keeps track of frames
+      _framesSinceBeat: 0
     }
 
-    this.onBeat = () => {
-    //  console.log("beat")
-    }
+    this.onBeat = () => {}
 
     this.canvas = document.createElement('canvas')
     this.canvas.width = 100
@@ -42,82 +53,135 @@ class Audio {
 
     this.isDrawing = isDrawing
     this.ctx = this.canvas.getContext('2d')
-    this.ctx.fillStyle="#DFFFFF"
-    this.ctx.strokeStyle="#0ff"
-    this.ctx.lineWidth=0.5
-    if(window.navigator.mediaDevices) {
-    window.navigator.mediaDevices.getUserMedia({video: false, audio: true})
-      .then((stream) => {
-      //  console.log('got mic stream', stream)
-        this.stream = stream
-        this.context = new AudioContext()
-        //  this.context = new AudioContext()
-        let audio_stream = this.context.createMediaStreamSource(stream)
+    this.ctx.fillStyle = "#DFFFFF"
+    this.ctx.strokeStyle = "#0ff"
+    this.ctx.lineWidth = 0.5
 
-      //  console.log(this.context)
-        this.meyda = Meyda.createMeydaAnalyzer({
-          audioContext: this.context,
-          source: audio_stream,
-          featureExtractors: [
-            'loudness',
-            //  'perceptualSpread',
-            //  'perceptualSharpness',
-            //  'spectralCentroid'
-          ]
-        })
+    if (autoMic) this.initMic()
+  }
+
+  initMic () {
+    if (!window.navigator.mediaDevices) {
+      return Promise.reject(new Error('mediaDevices not available'))
+    }
+    return window.navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+      .then(stream => this._connectSource(stream))
+      .catch(err => console.error('[hydra audio] getUserMedia failed:', err))
+  }
+
+  initStream () {
+    if (!window.navigator.mediaDevices) {
+      return Promise.reject(new Error('mediaDevices not available'))
+    }
+    return window.navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
+      .then(stream => {
+        stream.getVideoTracks().forEach(t => t.stop())
+        return this._connectSource(stream)
       })
-      .catch((err) => console.log('ERROR', err))
+      .catch(err => console.error('[hydra audio] getDisplayMedia failed:', err))
+  }
+
+  initMedia (el) {
+    if (!el) return Promise.reject(new Error('element required'))
+    el.crossOrigin = 'anonymous'
+    if (!this._context) this._context = new AudioContext()
+    const node = this._context.createMediaElementSource(el)
+    this._connectSource(node)
+    return this._context.resume()
+  }
+
+  _connectSource (streamOrNode) {
+    if (!this._context) this._context = new AudioContext()
+    this._context.resume()
+
+    if (this._stream) {
+      this._stream.getTracks().forEach(t => t.stop())
+      this._stream = null
+    }
+    if (this._sourceNode) {
+      try { this._sourceNode.disconnect() } catch (e) {}
+      this._sourceNode = null
+    }
+
+    let sourceNode
+    if (streamOrNode instanceof MediaStream) {
+      this._stream = streamOrNode
+      sourceNode = this._context.createMediaStreamSource(streamOrNode)
+    } else {
+      sourceNode = streamOrNode
+    }
+    this._sourceNode = sourceNode
+
+    if (this._meyda) {
+      this._meyda.stop()
+      this._meyda.setSource(sourceNode)
+      this._meyda.start()
+    } else {
+      this._meyda = Meyda.createMeydaAnalyzer({
+        audioContext: this._context,
+        source: sourceNode,
+        bufferSize: this._fftSize,
+        featureExtractors: ['loudness']
+      })
+      this._meyda.start()
+    }
+  }
+
+  start () {
+    if (this._context) return this._context.resume()
+    return Promise.resolve()
+  }
+
+  setFftSize (n) {
+    this._fftSize = n
+    if (this._meyda && this._sourceNode) {
+      this._meyda.stop()
+      this._meyda = Meyda.createMeydaAnalyzer({
+        audioContext: this._context,
+        source: this._sourceNode,
+        bufferSize: n,
+        featureExtractors: ['loudness']
+      })
     }
   }
 
   detectBeat (level) {
-    //console.log(level,   this.beat._cutoff)
     if (level > this.beat._cutoff && level > this.beat.threshold) {
+      this.isBeat = true
       this.onBeat()
-      this.beat._cutoff = level *1.2
+      this.beat._cutoff = level * 1.2
       this.beat._framesSinceBeat = 0
     } else {
-      if (this.beat._framesSinceBeat <= this.beat.holdFrames){
-        this.beat._framesSinceBeat ++;
+      if (this.beat._framesSinceBeat <= this.beat.holdFrames) {
+        this.beat._framesSinceBeat++
       } else {
         this.beat._cutoff *= this.beat.decay
-        this.beat._cutoff = Math.max(  this.beat._cutoff, this.beat.threshold);
+        this.beat._cutoff = Math.max(this.beat._cutoff, this.beat.threshold)
       }
     }
   }
 
-  tick() {
-   if(this.meyda){
-     var features = this.meyda.get()
-     if(features && features !== null){
-       this.vol = features.loudness.total
-       this.detectBeat(this.vol)
-       // reduce loudness array to number of bins
-       const reducer = (accumulator, currentValue) => accumulator + currentValue;
-       let spacing = Math.floor(features.loudness.specific.length/this.bins.length)
-       this.prevBins = this.bins.slice(0)
-       this.bins = this.bins.map((bin, index) => {
-         return features.loudness.specific.slice(index * spacing, (index + 1)*spacing).reduce(reducer)
-       }).map((bin, index) => {
-         // map to specified range
-
-        // return (bin * (1.0 - this.smooth) + this.prevBins[index] * this.smooth)
+  tick () {
+    this.isBeat = false
+    if (this._meyda) {
+      var features = this._meyda.get()
+      if (features && features !== null) {
+        this.vol = features.loudness.total
+        this.detectBeat(this.vol)
+        const reducer = (accumulator, currentValue) => accumulator + currentValue
+        let spacing = Math.floor(features.loudness.specific.length / this.bins.length)
+        this.prevBins = this.bins.slice(0)
+        this.bins = this.bins.map((bin, index) => {
+          return features.loudness.specific.slice(index * spacing, (index + 1) * spacing).reduce(reducer)
+        }).map((bin, index) => {
           return (bin * (1.0 - this.settings[index].smooth) + this.prevBins[index] * this.settings[index].smooth)
-       })
-       // var y = this.canvas.height - scale*this.settings[index].cutoff
-       // this.ctx.beginPath()
-       // this.ctx.moveTo(index*spacing, y)
-       // this.ctx.lineTo((index+1)*spacing, y)
-       // this.ctx.stroke()
-       //
-       // var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
-       this.fft = this.bins.map((bin, index) => (
-        // Math.max(0, (bin - this.cutoff) / (this.max - this.cutoff))
-         Math.max(0, (bin - this.settings[index].cutoff)/this.settings[index].scale)
-       ))
-       if(this.isDrawing) this.draw()
-     }
-   }
+        })
+        this.fft = this.bins.map((bin, index) => (
+          Math.max(0, (bin - this.settings[index].cutoff) / this.settings[index].scale)
+        ))
+      }
+    }
+    if (this.isDrawing) this.draw()
   }
 
   setCutoff (cutoff) {
@@ -145,14 +209,14 @@ class Audio {
       scale: this.scale,
       smooth: this.smooth
     }))
-    // to do: what to do in non-global mode?
-    this.bins.forEach((bin, index) => {
-      window['a' + index] = (scale = 1, offset = 0) => () => (a.fft[index] * scale + offset)
-    })
-  //  console.log(this.settings)
+    if (this._makeGlobal) {
+      this.bins.forEach((bin, index) => {
+        window['a' + index] = (scale = 1, offset = 0) => () => (this.fft[index] * scale + offset)
+      })
+    }
   }
 
-  setScale(scale){
+  setScale (scale) {
     this.scale = scale
     this.settings = this.settings.map((el) => {
       el.scale = scale
@@ -160,57 +224,39 @@ class Audio {
     })
   }
 
-  setMax(max) {
+  setMax (max) {
     this.max = max
     console.log('set max is deprecated')
   }
-  hide() {
+
+  hide () {
     this.isDrawing = false
     this.canvas.style.display = 'none'
   }
 
-  show() {
+  show () {
     this.isDrawing = true
     this.canvas.style.display = 'block'
-
   }
 
   draw () {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     var spacing = this.canvas.width / this.bins.length
     var scale = this.canvas.height / (this.max * 2)
-  //  console.log(this.bins)
     this.bins.forEach((bin, index) => {
-
       var height = bin * scale
-
-     this.ctx.fillRect(index * spacing, this.canvas.height - height, spacing, height)
-
-  //   console.log(this.settings[index])
-     var y = this.canvas.height - scale*this.settings[index].cutoff
-     this.ctx.beginPath()
-     this.ctx.moveTo(index*spacing, y)
-     this.ctx.lineTo((index+1)*spacing, y)
-     this.ctx.stroke()
-
-     var yMax = this.canvas.height - scale*(this.settings[index].scale + this.settings[index].cutoff)
-     this.ctx.beginPath()
-     this.ctx.moveTo(index*spacing, yMax)
-     this.ctx.lineTo((index+1)*spacing, yMax)
-     this.ctx.stroke()
+      this.ctx.fillRect(index * spacing, this.canvas.height - height, spacing, height)
+      var y = this.canvas.height - scale * this.settings[index].cutoff
+      this.ctx.beginPath()
+      this.ctx.moveTo(index * spacing, y)
+      this.ctx.lineTo((index + 1) * spacing, y)
+      this.ctx.stroke()
+      var yMax = this.canvas.height - scale * (this.settings[index].scale + this.settings[index].cutoff)
+      this.ctx.beginPath()
+      this.ctx.moveTo(index * spacing, yMax)
+      this.ctx.lineTo((index + 1) * spacing, yMax)
+      this.ctx.stroke()
     })
-
-
-    /*var y = this.canvas.height - scale*this.cutoff
-    this.ctx.beginPath()
-    this.ctx.moveTo(0, y)
-    this.ctx.lineTo(this.canvas.width, y)
-    this.ctx.stroke()
-    var yMax = this.canvas.height - scale*this.max
-    this.ctx.beginPath()
-    this.ctx.moveTo(0, yMax)
-    this.ctx.lineTo(this.canvas.width, yMax)
-    this.ctx.stroke()*/
   }
 }
 
