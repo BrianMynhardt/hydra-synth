@@ -8,8 +8,10 @@ const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo
 // const HydraShaders = require('./../shader-generator.js')
 
 function init () {
+window.evalHistory = []
 const PerformanceUI = require('./performance-ui')
 const audioPanel = require('./panels/audio')
+const historyPanel = require('./panels/history')
 
 //   const canvas = document.createElement('canvas')
 //   canvas.style.backgroundColor = "#000"
@@ -64,9 +66,11 @@ update = () => { _prevUpdate(); window.performanceUI && window.performanceUI.tic
 initEditor(defaultEditorValue)
 window.performanceUI = new PerformanceUI()
 window.performanceUI.register(audioPanel)
+window.performanceUI.register(historyPanel)
 }
 
 function initEditor (editorValue) {
+  let historyIndex = -1
   const editor = document.createElement('textarea')
   const style = editor.style
   style.position = 'fixed'
@@ -87,19 +91,19 @@ function initEditor (editorValue) {
   style.display = 'none'
 
   if(!editorValue){
-    editor.value = `
-        
-    
+    editor.value = localStorage.getItem('hydra-last-eval') || `
+
+
     shape(4, 0.5)
     .scale(0.5, 0.5, () => (a.fft[3] * 40 + 2) / 10)
     .out()
-    
+
     `
   }else{
-    editor.value = editorValue
+    editor.value = localStorage.getItem('hydra-last-eval') || editorValue
   }
-  
 
+  window._devEditor = editor
   document.body.appendChild(editor)
 
   document.addEventListener('keydown', (e) => {
@@ -124,9 +128,23 @@ function initEditor (editorValue) {
       e.preventDefault()
       try {
         eval(editor.value)
+        window.evalHistory.push({ code: editor.value, ts: new Date() })
+        window.evalHistory = window.evalHistory.slice(-50)
+        historyIndex = -1
+        localStorage.setItem('hydra-last-eval', editor.value)
       } catch (err) {
         console.error('[editor]', err)
       }
+    }
+    else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault()
+      if (window.evalHistory.length === 0) return
+      if (e.key === 'ArrowUp') {
+        historyIndex = Math.min(historyIndex + 1, window.evalHistory.length - 1)
+      } else {
+        historyIndex = Math.max(historyIndex - 1, 0)
+      }
+      editor.value = window.evalHistory[window.evalHistory.length - 1 - historyIndex].code
     }
     if (e.key === 'F' && e.shiftKey && e.altKey) {
       e.preventDefault()
