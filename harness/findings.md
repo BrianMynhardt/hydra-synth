@@ -133,24 +133,18 @@ console.log(this.canvas.width)
 
 ---
 
-### F-008 — `src/lib/video-recorder.js` references `sourceBuffer` (wrong variable)
-
-**File:** `src/lib/video-recorder.js`, line 15  
-**Severity:** Bug in `MediaSource` path
-
-```js
-self.sourceBuffer = self.mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
-console.log('Source buffer: ', sourceBuffer);  // ← should be self.sourceBuffer
-```
-
-`sourceBuffer` is undeclared in this scope. This will throw `ReferenceError` in the
-`sourceopen` listener. The `sourceopen` path is not currently exercised by the main
-start/stop recording flow (the `mediaRecorder` approach doesn't use `mediaSource`
-directly), so this may be dormant.
-
 ---
 
 ## Resolved Findings
+
+### F-008 — `src/lib/video-recorder.js` references `sourceBuffer` (wrong variable)
+
+**File:** `src/lib/video-recorder.js`, line 15  
+**Severity:** Bug in `MediaSource` path  
+**Resolved in:** `fix(video-recorder): reference self.sourceBuffer in sourceopen log (F-008)` (`74f7819`)
+
+`sourceBuffer` was undeclared in the `sourceopen` handler scope. Fixed by changing the
+`console.log` reference from `sourceBuffer` to `self.sourceBuffer`.
 
 ### F-005 — `src/lib/audio.js` references `a` (implicit global) in `setBins()`
 
