@@ -33,7 +33,7 @@ No arguments required. Operates on the current working directory's git state. Op
    a. Run `git add <specific files or hunks>` to stage only the files for this group. Use `git add -p <file>` via Bash if a single file contains changes for multiple groups.
    b. Verify staging is correct with `git diff --cached --stat`.
    c. Write a commit message following Conventional Commits format: `type(scope): short imperative summary`. Types: feat, fix, refactor, chore, docs, test, style. Keep the subject under 72 characters.
-   d. Run `git commit -m "<message>"` using a heredoc so special characters are safe.
+   d. Run `git commit -m "<message>"` using a heredoc so special characters are safe. Do not add a Co-Authored-By trailer or any Claude signature to the message.
    e. Confirm the commit succeeded with `git log --oneline -1`.
 
 6. After all groups are committed, run `git log --oneline -<N>` (where N = number of commits made) and output a summary to the user listing each commit hash and message.
