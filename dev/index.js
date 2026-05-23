@@ -55,7 +55,8 @@ foreground.layer(background.colorama(20)).out()
 
 //s0.initVideo("https://media.giphy.com/media/26ufplp8yheSKUE00/giphy.mp4", {})
 //src(s0).repeat().out()
-a.initStream();
+a.initStream()
+update = () => { document.title = hydra.synth.stats.fps + ' fps' }
 initEditor(defaultEditorValue)
 }
 
