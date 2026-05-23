@@ -612,33 +612,87 @@ when a user passes an array as a transform argument.
 **File:** `src/lib/audio.js`
 **Export:** `export default Audio`
 
-ES6 class. Meyda-based FFT analyser with beat detection. Created by `HydraRenderer` when
-`detectAudio: true`. Exposed on the `synth` object as `synth.a`.
+ES6 class. Meyda-based FFT analyser with beat detection and multi-source capture. Created by
+`HydraRenderer` when `detectAudio: true`. Exposed on the `synth` object as `synth.a` (and as
+`a` in `makeGlobal: true` mode).
+
+`initMic()`, `initStream()`, and `initMedia()` all require a prior user gesture — they cannot
+be called from a `setTimeout` or the render loop.
 
 ### Constructor
 
 ```js
 /**
- * @param {object} opts
- * @param {number} [opts.numBins=4]      Number of frequency bands
- * @param {number} [opts.cutoff=2]       Minimum level before a bin registers
- * @param {number} [opts.smooth=0.4]     Smoothing factor (0 = no smooth, 1 = max smooth)
- * @param {number} [opts.max=15]         Deprecated; use scale instead
- * @param {number} [opts.scale=10]       Scaling factor for FFT values
- * @param {boolean} [opts.isDrawing=false]  Render visualiser canvas
+ * @param {object} [opts]
+ * @param {number}  [opts.numBins=4]          Number of frequency bands
+ * @param {number}  [opts.cutoff=2]           Minimum level before a bin registers
+ * @param {number}  [opts.smooth=0.4]         Per-bin smoothing (0 = none, 1 = max)
+ * @param {number}  [opts.max=15]             Deprecated; use scale
+ * @param {number}  [opts.scale=10]           Scaling divisor for FFT normalisation
+ * @param {number}  [opts.fftSize=1024]       Meyda bufferSize — must be a power of two
+ * @param {number}  [opts.beatThreshold=40]   Minimum loudness to register a beat
+ * @param {number}  [opts.beatHoldFrames=20]  Frames to hold the beat gate open
+ * @param {boolean} [opts.autoMic=false]      If true, calls initMic() immediately
+ * @param {boolean} [opts.makeGlobal=true]    Whether to register window['a0']–window['aN'] helpers
+ * @param {boolean} [opts.isDrawing=false]    Render FFT visualiser canvas
  * @param {HTMLElement} [opts.parentEl=document.body]
  */
 new Audio(opts)
 ```
 
-Requests microphone access via `navigator.mediaDevices.getUserMedia`. Creates a
-`canvas` (100×80px) appended to `parentEl` for optional visualisation.
+The constructor does not auto-request microphone access. Call `initMic()` explicitly from a
+click handler, or pass `autoMic: true` to restore the pre-refactor behaviour.
+
+### `Audio.prototype.initMic()`
+
+```js
+/** @returns {Promise<void>} */
+initMic()
+```
+
+Requests microphone access via `getUserMedia` and wires it to the Meyda analyser. Returns a
+Promise; `.catch` to handle permission denied. Must be called from a user-gesture handler.
+
+### `Audio.prototype.initStream()`
+
+```js
+/** @returns {Promise<void>} */
+initStream()
+```
+
+Requests display/tab audio via `getDisplayMedia({ audio: true, video: true })`. Stops video
+tracks immediately after connecting. Returns a Promise. Must be called from a user-gesture
+handler.
+
+### `Audio.prototype.initMedia(el)`
+
+```js
+/**
+ * @param {HTMLMediaElement} el  An <audio> or <video> element
+ * @returns {Promise<void>}
+ */
+initMedia(el)
+```
+
+Connects an existing HTML media element as the audio source via `createMediaElementSource`.
+Sets `el.crossOrigin = 'anonymous'` — the element must not have already loaded under a
+different CORS policy or the Web Audio API will throw.
+
+### `Audio.prototype.start()`
+
+```js
+/** @returns {Promise<void>} */
+start()
+```
+
+Calls `AudioContext.resume()`. Wire this to a click handler to unblock the `AudioContext` in
+browsers where context creation outside a user gesture starts in `"suspended"` state.
 
 ### `Audio.prototype.tick()`
 
-Reads features from the Meyda analyser. Updates `this.bins`, `this.prevBins`, `this.fft`.
-Calls `detectBeat(this.vol)`. Calls `draw()` if `isDrawing`. No-op if Meyda is not
-initialised yet.
+Clears `isBeat`, then reads features from the Meyda analyser. Updates `bins`, `prevBins`,
+`fft`, `vol`, and `isBeat`. Calls `draw()` if `isDrawing`. No-op if Meyda is not yet
+initialised.
 
 ### `Audio.prototype.setBins(numBins)`
 
@@ -647,29 +701,38 @@ initialised yet.
 setBins(numBins)
 ```
 
-Sets the number of FFT bands. Also registers `window['a0']`–`window['a{n}']` as closures.
-
-**Known bug (F-005):** The closures reference the global variable `a` instead of `this`.
-This works only when `makeGlobal: true` (because then `window.a === synth.a`). In
-`makeGlobal: false` mode, `a` is undefined and the closures throw.
+Sets the number of FFT bands. When `makeGlobal: true`, registers `window['a0']`–`window['aN']`
+as closures that return `() => (a.fft[index] * scale + offset)`.
 
 ### `Audio.prototype.setCutoff(cutoff)` / `setSmooth(smooth)` / `setScale(scale)`
 
-Update per-bin settings uniformly across all bins.
+Update the corresponding per-bin setting uniformly across all bins.
+
+### `Audio.prototype.setFftSize(n)`
+
+```js
+/** @param {number} n  Power of two (512, 1024, 2048, …) */
+setFftSize(n)
+```
+
+Changes the Meyda buffer size. Recreates the analyser in-place if already initialised.
 
 ### `Audio.prototype.detectBeat(level)`
 
-Threshold-based beat detector. Fires `this.onBeat()` when `level` exceeds the adaptive cutoff.
-Adaptive cutoff decays toward `beat.threshold` between beats.
+Threshold-based beat detector. Sets `this.isBeat = true` and fires `this.onBeat()` when
+`level` exceeds the adaptive cutoff. Adaptive cutoff decays toward `beat.threshold` between
+beats.
 
-### Public properties (post-init)
+### Public properties
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `a.fft` | `number[]` | Normalised FFT values, length = `numBins`, range [0, 1] |
 | `a.bins` | `number[]` | Raw (smoothed) bin values before scale/cutoff normalisation |
 | `a.vol` | `number` | Total loudness from Meyda |
-| `a.onBeat` | `function` | Callback fired on beat detection; override to respond to beats |
+| `a.isBeat` | `boolean` | `true` for exactly one tick after the beat threshold is crossed |
+| `a.beat` | `object` | Beat config: `{ threshold, holdFrames, _cutoff, decay, _framesSinceBeat }` — kept for backwards compat; not the beat signal |
+| `a.onBeat` | `function` | Override to respond to beats: `a.onBeat = () => console.log('beat')` |
 
 ---
 
