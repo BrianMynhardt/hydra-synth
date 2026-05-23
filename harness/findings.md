@@ -94,27 +94,6 @@ Currently harmless because:
 
 ---
 
-### F-005 — `src/lib/audio.js` references `a` (implicit global) in `setBins()`
-
-**File:** `src/lib/audio.js`, line 150  
-**Severity:** Bug (broken in non-global mode)
-
-```js
-window['a' + index] = (scale = 1, offset = 0) => () => (a.fft[index] * scale + offset)
-```
-
-The closure references `a`, which is intended to be `window.a` (the Audio instance, set as
-`this.synth.a` by `HydraRenderer` and exposed globally via `makeGlobal`). This works when
-`makeGlobal: true` because `window.a` is set before `setBins()` finishes. However:
-- It does not work in `makeGlobal: false` mode — `a` is undefined.
-- It is a temporal dependency: `setBins()` is called in the constructor before `window.a`
-  is set by the parent (`HydraRenderer._initAudio` → `new Audio(...)` → `setBins()`).
-
-**Expected fix:** Change `a.fft[index]` to `this.fft[index]`, which is always available
-as `this` is the Audio instance.
-
----
-
 ### F-006 — Eval sandbox provides no actual isolation
 
 **File:** `src/lib/sandbox.js`  
@@ -173,4 +152,12 @@ directly), so this may be dormant.
 
 ## Resolved Findings
 
-*(None yet — move items here when confirmed fixed in a PR)*
+### F-005 — `src/lib/audio.js` references `a` (implicit global) in `setBins()`
+
+**File:** `src/lib/audio.js`  
+**Severity:** Bug (broken in non-global mode)  
+**Resolved in:** `feat(audio): add initMic/initStream/initMedia source switching + fix F-005`
+
+The closure in `setBins()` referenced the global `a` instead of `this`. Fixed by replacing
+`a.fft[index]` with `this.fft[index]`. Window helper registration is now also guarded by
+`this._makeGlobal`, so `makeGlobal: false` instances no longer assign to `window`.

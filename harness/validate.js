@@ -210,6 +210,35 @@ if (r3TotalFailed === 0) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Rule 4: Audio class has the required public methods.
+//
+// Why: initMic/initStream/initMedia are the primary source-switching
+// API added in the audio refactor. Checking the prototype statically
+// catches accidental renames or removals without needing a browser.
+// ──────────────────────────────────────────────────────────────
+
+section('4: Audio class has required public methods')
+
+try {
+  const audioContent = readFileSync(join(ROOT, 'src/lib/audio.js'), 'utf8')
+  const REQUIRED_METHODS = ['tick', 'initMic', 'initStream', 'initMedia']
+  let rule4Failures = 0
+
+  for (const method of REQUIRED_METHODS) {
+    if (!new RegExp(`\\b${method}\\s*\\(`).test(audioContent)) {
+      fail(`Audio class is missing required method '${method}'`)
+      rule4Failures++
+    }
+  }
+
+  if (rule4Failures === 0) {
+    pass(`Audio class has all required methods: ${REQUIRED_METHODS.join(', ')}`)
+  }
+} catch (e) {
+  fail(`Could not read src/lib/audio.js: ${e.message}`)
+}
+
+// ──────────────────────────────────────────────────────────────
 // Summary
 // ──────────────────────────────────────────────────────────────
 
