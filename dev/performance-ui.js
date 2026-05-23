@@ -42,8 +42,13 @@ class PerformanceUI {
       gap:        '4px',
       fontFamily: 'monospace',
     })
+    strip.style.display = 'none'
     document.body.appendChild(strip)
     this._stripEl = strip
+  }
+
+  setVisible (v) {
+    this._stripEl.style.display = v ? 'flex' : 'none'
   }
 
   _togglePanel (entry) {

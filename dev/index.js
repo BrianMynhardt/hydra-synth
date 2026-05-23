@@ -8,6 +8,10 @@ const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo
 // const HydraShaders = require('./../shader-generator.js')
 
 function init () {
+const resetStyle = document.createElement('style')
+resetStyle.textContent = 'html,body{margin:0;padding:0;overflow:hidden;width:100%;height:100%}canvas{display:block}'
+document.head.appendChild(resetStyle)
+
 window.evalHistory = []
 const PerformanceUI = require('./performance-ui')
 const audioPanel = require('./panels/audio')
@@ -109,7 +113,9 @@ function initEditor (editorValue) {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       editor.style.display = editor.style.display === 'none' ? 'block' : 'none'
-      if (editor.style.display === 'block') editor.focus()
+      const open = editor.style.display === 'block'
+      if (open) editor.focus()
+      window.performanceUI && window.performanceUI.setVisible(open)
     }
   })
 
@@ -161,6 +167,7 @@ function initEditor (editorValue) {
     if (e.key === 'Escape') {
       e.stopPropagation()
       editor.style.display = 'none'
+      window.performanceUI && window.performanceUI.setVisible(false)
     }
   })
 }
