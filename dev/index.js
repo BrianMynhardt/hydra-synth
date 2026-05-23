@@ -8,6 +8,8 @@ const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo
 // const HydraShaders = require('./../shader-generator.js')
 
 function init () {
+const PerformanceUI = require('./performance-ui')
+const audioPanel = require('./panels/audio')
 
 //   const canvas = document.createElement('canvas')
 //   canvas.style.backgroundColor = "#000"
@@ -57,7 +59,11 @@ foreground.layer(background.colorama(20)).out()
 //src(s0).repeat().out()
 a.initStream()
 update = () => { document.title = hydra.synth.stats.fps + ' fps' }
+const _prevUpdate = update
+update = () => { _prevUpdate(); window.performanceUI && window.performanceUI.tick() }
 initEditor(defaultEditorValue)
+window.performanceUI = new PerformanceUI()
+window.performanceUI.register(audioPanel)
 }
 
 function initEditor (editorValue) {
