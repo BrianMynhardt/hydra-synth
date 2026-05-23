@@ -37,6 +37,7 @@ Before writing, identify:
 - Return the final prompt in a **clearly labeled code block** (copyable directly)
 - If both system and user prompts are needed, **label and separate them**
 - Follow with a brief note (2–4 bullets) explaining key design decisions
+- **CRITICAL: Do NOT escape any characters inside code blocks.** Output markdown exactly as it should appear — never add backslashes before `*`, `_`, `[`, `]`, `#`, `` ` ``, `<`, `>`, `|`, or any other character. The user must be able to copy the code block contents and paste them directly without manual cleanup.
 
 ### 4. Iteration
 - If the user's request is vague, **ask exactly one clarifying question** before writing
