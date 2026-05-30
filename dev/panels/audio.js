@@ -2,11 +2,16 @@
 
 const LABEL_W  = 30   // shared label column width
 const BIN_W    = 52   // per-bin column width
-const CANVAS_W = BIN_W
 const CANVAS_H = 80
 const MAX_BINS = 12   // bins before horizontal scroll
 const CUT_SENS = 0.1
 const SCL_SENS = 0.15
+
+const CAPTURE_MS = 3000
+const PERIOD_MS  = 15000
+const EPSILON    = 0.05
+const HEADROOM   = 1.1
+const FLASH_MS   = 600
 
 const drag = { active: false, binIndex: 0, prop: '', startX: 0, startVal: 0, global: false }
 
@@ -28,87 +33,75 @@ function onDragMove (e) {
 document.addEventListener('mousemove', onDragMove)
 document.addEventListener('mouseup', () => { drag.active = false })
 
-function makeRow (contentW) {
-  const row = document.createElement('div')
-  row.style.cssText = `display:flex;align-items:stretch;min-width:${contentW}px`
-  return row
-}
-
-function makeLabelCell (text, color, cursor) {
-  const cell = document.createElement('div')
-  cell.style.cssText = `width:${LABEL_W}px;flex-shrink:0;font:10px monospace;color:${color};` +
-    `display:flex;align-items:center;padding-left:2px;user-select:none` +
-    (cursor ? `;cursor:${cursor}` : '')
-  cell.textContent = text
-  return cell
-}
-
-function makeBinCell (first) {
-  const cell = document.createElement('div')
-  cell.style.cssText = `width:${BIN_W}px;flex-shrink:0;display:flex;align-items:center;justify-content:center` +
-    (first ? '' : ';border-left:1px solid #0ff2')
-  return cell
-}
-
+// Layout: one CSS-grid with 1 label column + N bin columns. Every row reuses
+// the same grid-template-columns, so each bin cell across rows is identically
+// sized and positioned — alignment is a property of the grid, not of per-cell
+// styling.
 function buildCols (el, count) {
   drag.active = false
-  el.innerHTML = ''
+  const grid = el._grid
+  grid.innerHTML = ''
 
-  const capped    = Math.min(count, MAX_BINS)
-  const contentW  = LABEL_W + count * BIN_W
-  const panelW    = LABEL_W + capped * BIN_W + 18  // 16px contentEl padding + 2px border
+  const capped = Math.min(count, MAX_BINS)
+  const totalW = LABEL_W + count * BIN_W
+  const panelW = LABEL_W + capped * BIN_W + 18  // 16px contentEl padding + 2px border
 
-  el.style.overflowX = count > MAX_BINS ? 'auto' : 'hidden'
+  grid.style.cssText =
+    `display:grid;` +
+    `grid-template-columns:${LABEL_W}px repeat(${count}, ${BIN_W}px);` +
+    `min-width:${totalW}px;` +
+    `overflow-x:${count > MAX_BINS ? 'auto' : 'hidden'}`
+
+  // outer panel is el.parentElement (el is the contentEl from PerformanceUI)
   if (el.parentElement) el.parentElement.style.width = panelW + 'px'
 
-  const rows     = []
   const canvases = []
+  const rows = Array.from({ length: count }, () => [null, null, null, null, null])
 
-  // ── canvas row ──────────────────────────────────────────────────
-  const canvasRow = makeRow(contentW)
-  canvasRow.style.marginBottom = '2px'
-  canvasRow.appendChild(makeLabelCell('', '#555'))
+  const appendSpacer = () => grid.appendChild(document.createElement('div'))
 
+  // ── canvas row ───────────────────────────────────────────────────
+  appendSpacer()
   for (let i = 0; i < count; i++) {
-    const cell = makeBinCell(i === 0)
-    cell.style.alignItems = 'flex-end'
     const cv = document.createElement('canvas')
-    cv.width  = CANVAS_W
+    cv.width  = BIN_W
     cv.height = CANVAS_H
-    cv.style.cssText = 'display:block;background:#111'
-    cell.appendChild(cv)
+    cv.style.cssText = 'display:block;background:#111;cursor:pointer'
+    cv.title = 'double-click to auto-tune this bin'
+    cv.addEventListener('dblclick', () => {
+      if (!window.a || !window.a.bins) return
+      if (el._tune) return
+      startCapture(el, [i])
+    })
     canvases.push(cv)
-    canvasRow.appendChild(cell)
+    grid.appendChild(cv)
   }
-  el.appendChild(canvasRow)
 
   // ── bin-number row ───────────────────────────────────────────────
-  const numRow = makeRow(contentW)
-  numRow.appendChild(makeLabelCell('', '#555'))
-
+  appendSpacer()
   for (let i = 0; i < count; i++) {
-    const cell = makeBinCell(i === 0)
-    cell.style.font    = 'bold 10px monospace'
-    cell.style.color   = '#0ff'
-    cell.style.padding = '1px 0'
-    cell.textContent   = i
-    numRow.appendChild(cell)
+    const num = document.createElement('div')
+    num.style.cssText = 'font:bold 10px monospace;color:#0ff;text-align:right;padding:2px 4px 1px;box-sizing:border-box'
+    num.textContent = i
+    grid.appendChild(num)
   }
-  el.appendChild(numRow)
 
   // ── stat rows ────────────────────────────────────────────────────
-  for (let i = 0; i < count; i++) rows.push([null, null, null, null])
-
   ;[
     { label: 'raw', color: '#ccc', prop: null     },
     { label: 'fft', color: '#888', prop: null     },
     { label: 'cut', color: '#ff0', prop: 'cutoff' },
     { label: 'scl', color: '#888', prop: 'scale'  },
+    { label: 'hz',  color: '#888', prop: null     },
   ].forEach(({ label, color, prop }, si) => {
     const scrubable = prop !== null
-    const statRow = makeRow(contentW)
 
-    const lbl = makeLabelCell(label, scrubable ? '#aaa' : '#555', scrubable ? 'ew-resize' : null)
+    const lbl = document.createElement('div')
+    lbl.style.cssText =
+      `font:10px monospace;color:${scrubable ? '#aaa' : '#555'};` +
+      `padding-left:2px;display:flex;align-items:center;user-select:none` +
+      (scrubable ? ';cursor:ew-resize' : '')
+    lbl.textContent = label
     if (scrubable) {
       lbl.addEventListener('mousedown', e => {
         if (!window.a) return
@@ -121,16 +114,13 @@ function buildCols (el, count) {
         e.preventDefault()
       })
     }
-    statRow.appendChild(lbl)
+    grid.appendChild(lbl)
 
     for (let i = 0; i < count; i++) {
-      const cell = makeBinCell(i === 0)
-      cell.style.justifyContent = 'flex-end'
-      cell.style.padding        = '0 4px'
-      cell.style.font           = '10px monospace'
-      cell.style.color          = color
-      cell.textContent          = '—'
-
+      const cell = document.createElement('div')
+      cell.style.cssText =
+        `font:10px monospace;color:${color};text-align:right;padding:0 4px;box-sizing:border-box`
+      cell.textContent = '—'
       if (scrubable) {
         cell.style.cursor = 'ew-resize'
         cell.addEventListener('mousedown', e => {
@@ -144,11 +134,9 @@ function buildCols (el, count) {
           e.preventDefault()
         })
       }
-
       rows[i][si] = cell
-      statRow.appendChild(cell)
+      grid.appendChild(cell)
     }
-    el.appendChild(statRow)
   })
 
   el._rows     = rows
@@ -158,8 +146,60 @@ function buildCols (el, count) {
   el._binCount = count
 }
 
-function init (el) {
+function paintBtn (el, label) {
+  const btn = el._tuneBtn
+  if (!btn) return
+  if (el._tuneMode) {
+    btn.style.background = '#0ff'
+    btn.style.color      = '#000'
+  } else {
+    btn.style.background = 'rgba(0,0,0,0.75)'
+    btn.style.color      = '#0ff'
+  }
+  btn.textContent = label
+}
+
+function startCapture (el, targets) {
+  if (!window.a || !window.a.bins) return
+  if (el._tune) return
+  const n = window.a.bins.length
+  el._tune = {
+    samples:  Array.from({ length: n }, () => []),
+    until:    performance.now() + CAPTURE_MS,
+    binCount: n,
+    targets:  targets || Array.from({ length: n }, (_, i) => i),
+  }
+  paintBtn(el, 'listening…')
+}
+
+function init (el, titleBar) {
   el.style.cssText = 'display:flex;flex-direction:column;padding:3px 2px;box-sizing:border-box'
+
+  const btn = document.createElement('button')
+  btn.style.cssText = 'font:11px monospace;background:rgba(0,0,0,0.75);border:1px solid #0ff;color:#0ff;padding:1px 6px;cursor:pointer;margin-right:6px'
+  btn.title = 'click to toggle periodic auto-tune (every 15s)'
+  btn.addEventListener('click', () => {
+    if (!window.a || !window.a.bins) return
+    if (el._tuneMode) {
+      el._tuneMode = false
+      el._tune = null
+      paintBtn(el, 'auto-tune')
+    } else {
+      el._tuneMode = true
+      startCapture(el, null)
+    }
+  })
+  if (titleBar && titleBar.lastChild) {
+    titleBar.insertBefore(btn, titleBar.lastChild)
+  }
+  el._tuneBtn = btn
+  paintBtn(el, 'auto-tune')
+
+  const grid = document.createElement('div')
+  grid.style.cssText = 'display:flex;flex-direction:column'
+  el.appendChild(grid)
+  el._grid = grid
+
   buildCols(el, 4)
 }
 
@@ -167,6 +207,44 @@ function update (el) {
   if (!window.a || !el._rows) return
   const { bins, fft, settings } = window.a
   if (!bins || !fft || !settings) return
+
+  if (el._tune) {
+    if (bins.length !== el._tune.binCount) {
+      el._tune = null
+      paintBtn(el, 'auto-tune')
+    } else {
+      for (let i = 0; i < bins.length; i++) el._tune.samples[i].push(bins[i])
+      if (performance.now() >= el._tune.until) {
+        const results = el._tune.targets.map(i => {
+          const sorted = el._tune.samples[i].slice().sort((a, b) => a - b)
+          return {
+            i,
+            cutoff: sorted[Math.floor(sorted.length * 0.10)],
+            peak:   sorted[Math.floor(sorted.length * 0.95)],
+          }
+        })
+        const silent = results.some(r => r.peak - r.cutoff < EPSILON)
+        if (silent) {
+          el._tuneBtn.style.background = '#400'
+          el._tuneBtn.style.color      = '#f88'
+          el._tuneBtn.textContent      = 'silence'
+          setTimeout(() => paintBtn(el, 'auto-tune'), FLASH_MS)
+        } else {
+          for (const r of results) {
+            settings[r.i].cutoff = r.cutoff
+            settings[r.i].scale  = (r.peak - r.cutoff) * HEADROOM
+          }
+          paintBtn(el, 'auto-tune')
+        }
+        el._tune = null
+        if (el._tuneMode) el._tuneNext = performance.now() + (PERIOD_MS - CAPTURE_MS)
+      }
+    }
+  }
+
+  if (el._tuneMode && !el._tune && performance.now() >= (el._tuneNext || 0)) {
+    startCapture(el, null)
+  }
 
   if (bins.length !== el._binCount) buildCols(el, bins.length)
 
@@ -177,6 +255,9 @@ function update (el) {
     cells[1].textContent = fft[i].toFixed(3)
     cells[2].textContent = settings[i].cutoff.toFixed(2)
     cells[3].textContent = settings[i].scale.toFixed(2)
+    cells[4].textContent = settings[i].minHz != null
+      ? settings[i].minHz + '–' + settings[i].maxHz
+      : '—'
 
     const cv = el._canvases[i]
     if (!cv) continue
@@ -218,7 +299,7 @@ module.exports = {
   key:    'a',
   zone:   'top-left',
   width:  LABEL_W + 4 * BIN_W + 18,  // default: 4 bins
-  height: 160,
+  height: 175,
   init,
   update,
 }
