@@ -121,7 +121,7 @@ class Audio {
         audioContext: this._context,
         source: sourceNode,
         bufferSize: this._fftSize,
-        featureExtractors: ['loudness']
+        featureExtractors: ['loudness', 'amplitudeSpectrum']
       })
       this._meyda.start()
     }
@@ -140,7 +140,7 @@ class Audio {
         audioContext: this._context,
         source: this._sourceNode,
         bufferSize: n,
-        featureExtractors: ['loudness']
+        featureExtractors: ['loudness', 'amplitudeSpectrum']
       })
     }
   }
@@ -172,6 +172,16 @@ class Audio {
         let spacing = Math.floor(features.loudness.specific.length / this.bins.length)
         this.prevBins = this.bins.slice(0)
         this.bins = this.bins.map((bin, index) => {
+          const s = this.settings[index]
+          if (s.minHz != null && features.amplitudeSpectrum && this._context) {
+            const spec = features.amplitudeSpectrum
+            const binHz = this._context.sampleRate / this._fftSize
+            const kMin = Math.max(0, Math.floor(s.minHz / binHz))
+            const kMax = Math.min(spec.length - 1, Math.ceil(s.maxHz / binHz))
+            let sum = 0
+            for (let k = kMin; k <= kMax; k++) sum += spec[k]
+            return sum
+          }
           return features.loudness.specific.slice(index * spacing, (index + 1) * spacing).reduce(reducer)
         }).map((bin, index) => {
           return (bin * (1.0 - this.settings[index].smooth) + this.prevBins[index] * this.settings[index].smooth)
@@ -207,13 +217,31 @@ class Audio {
     this.settings = Array(numBins).fill(0).map(() => ({
       cutoff: this.cutoff,
       scale: this.scale,
-      smooth: this.smooth
+      smooth: this.smooth,
+      minHz: null,
+      maxHz: null
     }))
     if (this._makeGlobal) {
       this.bins.forEach((bin, index) => {
         window['a' + index] = (scale = 1, offset = 0) => () => (this.fft[index] * scale + offset)
       })
     }
+  }
+
+  setBinRange (index, minHz, maxHz) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.settings.length) {
+      throw new RangeError(`bin index ${index} out of range [0, ${this.settings.length})`)
+    }
+    if (minHz === null && maxHz === null) {
+      this.settings[index].minHz = null
+      this.settings[index].maxHz = null
+      return
+    }
+    if (!Number.isFinite(minHz) || !Number.isFinite(maxHz) || minHz >= maxHz) {
+      throw new TypeError(`invalid Hz range: ${minHz}..${maxHz}`)
+    }
+    this.settings[index].minHz = minHz
+    this.settings[index].maxHz = maxHz
   }
 
   setScale (scale) {
