@@ -108,7 +108,7 @@ class PerformanceUI {
     contentEl.style.padding = '4px 8px'
     outer.appendChild(contentEl)
 
-    d.init(contentEl)
+    d.init(contentEl, titleBar)
 
     document.body.appendChild(outer)
     return { outerEl: outer, contentEl, closeBtn }
