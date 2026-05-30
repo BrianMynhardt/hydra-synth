@@ -39,6 +39,9 @@ class Audio {
       _framesSinceBeat: 0
     }
 
+    this.onsetHoldFrames = 3
+    this._prevSpectrum = null
+
     this.onBeat = () => {}
 
     this.canvas = document.createElement('canvas')
@@ -143,6 +146,7 @@ class Audio {
         featureExtractors: ['loudness', 'amplitudeSpectrum']
       })
     }
+    this._prevSpectrum = null
   }
 
   detectBeat (level) {
@@ -189,6 +193,41 @@ class Audio {
         this.fft = this.bins.map((bin, index) => (
           Math.max(0, (bin - this.settings[index].cutoff) / this.settings[index].scale)
         ))
+        const spec = features.amplitudeSpectrum
+        if (spec && this._context) {
+          if (!this._prevSpectrum || this._prevSpectrum.length !== spec.length) {
+            this._prevSpectrum = new Float32Array(spec.length)
+          }
+          const binHz = this._context.sampleRate / this._fftSize
+          const span = spec.length / this.bins.length
+          for (let i = 0; i < this.bins.length; i++) {
+            const s = this.settings[i]
+            let kMin, kMax
+            if (s.minHz != null) {
+              kMin = Math.max(0, Math.floor(s.minHz / binHz))
+              kMax = Math.min(spec.length - 1, Math.ceil(s.maxHz / binHz))
+            } else {
+              kMin = Math.floor(i * span)
+              kMax = Math.min(spec.length - 1, Math.floor((i + 1) * span) - 1)
+            }
+            let flux = 0
+            for (let k = kMin; k <= kMax; k++) {
+              const d = spec[k] - this._prevSpectrum[k]
+              if (d > 0) flux += d
+            }
+            this.flux[i] = flux
+            if (this._onsetCooldown[i] > 0) {
+              this._onsetCooldown[i]--
+              this.onset[i] = false
+            } else if (flux >= s.fluxThreshold) {
+              this.onset[i] = true
+              this._onsetCooldown[i] = this.onsetHoldFrames
+            } else {
+              this.onset[i] = false
+            }
+          }
+          this._prevSpectrum.set(spec)
+        }
       }
     }
     if (this.isDrawing) this.draw()
@@ -214,12 +253,16 @@ class Audio {
     this.bins = Array(numBins).fill(0)
     this.prevBins = Array(numBins).fill(0)
     this.fft = Array(numBins).fill(0)
+    this.flux = Array(numBins).fill(0)
+    this.onset = Array(numBins).fill(false)
+    this._onsetCooldown = Array(numBins).fill(0)
     this.settings = Array(numBins).fill(0).map(() => ({
       cutoff: this.cutoff,
       scale: this.scale,
       smooth: this.smooth,
       minHz: null,
-      maxHz: null
+      maxHz: null,
+      fluxThreshold: 0.1
     }))
     if (this._makeGlobal) {
       this.bins.forEach((bin, index) => {
@@ -242,6 +285,16 @@ class Audio {
     }
     this.settings[index].minHz = minHz
     this.settings[index].maxHz = maxHz
+  }
+
+  setOnsetThreshold (index, value) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.settings.length) {
+      throw new RangeError(`bin index ${index} out of range`)
+    }
+    if (!Number.isFinite(value) || value < 0) {
+      throw new TypeError(`fluxThreshold must be a non-negative number`)
+    }
+    this.settings[index].fluxThreshold = value
   }
 
   setScale (scale) {
