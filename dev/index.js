@@ -16,6 +16,7 @@ window.evalHistory = []
 const PerformanceUI = require('./performance-ui')
 const audioPanel = require('./panels/audio')
 const historyPanel = require('./panels/history')
+const snippetsPanel = require('./panels/snippets')
 
 //   const canvas = document.createElement('canvas')
 //   canvas.style.backgroundColor = "#000"
@@ -67,10 +68,12 @@ a.initStream()
 update = () => { document.title = hydra.synth.stats.fps + ' fps' }
 const _prevUpdate = update
 update = () => { _prevUpdate(); window.performanceUI && window.performanceUI.tick() }
+window.snippetBank = Array.from({length: 10}, (_, i) => localStorage.getItem('hydra-snippet-' + i))
 initEditor(defaultEditorValue)
 window.performanceUI = new PerformanceUI()
 window.performanceUI.register(audioPanel)
 window.performanceUI.register(historyPanel)
+window.performanceUI.register(snippetsPanel)
 }
 
 function initEditor (editorValue) {
@@ -111,6 +114,18 @@ function initEditor (editorValue) {
   document.body.appendChild(editor)
 
   document.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
+      const i = parseInt(e.key, 10)
+      const slot = window.snippetBank && window.snippetBank[i]
+      if (slot != null) {
+        e.preventDefault()
+        if (window._devEditor) window._devEditor.value = slot
+        editor.style.display = 'block'
+        editor.focus()
+        window.performanceUI && window.performanceUI.setVisible(true)
+      }
+      return
+    }
     if (e.key === 'Escape') {
       editor.style.display = editor.style.display === 'none' ? 'block' : 'none'
       const open = editor.style.display === 'block'
@@ -130,6 +145,13 @@ function initEditor (editorValue) {
   }
 
   editor.addEventListener('keydown', async (e) => {
+    if (e.altKey && e.shiftKey && /^[0-9]$/.test(e.key)) {
+      e.preventDefault()
+      const i = parseInt(e.key, 10)
+      window.snippetBank[i] = editor.value
+      localStorage.setItem('hydra-snippet-' + i, editor.value)
+      return
+    }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       try {
