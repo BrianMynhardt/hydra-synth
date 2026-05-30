@@ -6,6 +6,7 @@ const CANVAS_H = 80
 const MAX_BINS = 12   // bins before horizontal scroll
 const CUT_SENS = 0.1
 const SCL_SENS = 0.15
+const THR_SENS = 0.005
 
 const CAPTURE_MS = 3000
 const PERIOD_MS  = 15000
@@ -17,11 +18,18 @@ const drag = { active: false, binIndex: 0, prop: '', startX: 0, startVal: 0, glo
 
 function onDragMove (e) {
   if (!drag.active || !window.a) return
-  const sens = drag.prop === 'cutoff' ? CUT_SENS : SCL_SENS
+  const sens = drag.prop === 'cutoff'
+    ? CUT_SENS
+    : drag.prop === 'fluxThreshold' ? THR_SENS : SCL_SENS
   const raw = drag.startVal + (e.clientX - drag.startX) * sens
-  const newVal = drag.prop === 'cutoff'
-    ? Math.max(0, Math.min(window.a.max || 15, raw))
-    : Math.max(0.1, Math.min(50, raw))
+  let newVal
+  if (drag.prop === 'cutoff') {
+    newVal = Math.max(0, Math.min(window.a.max || 15, raw))
+  } else if (drag.prop === 'fluxThreshold') {
+    newVal = Math.max(0, Math.min(5, raw))
+  } else {
+    newVal = Math.max(0.1, Math.min(50, raw))
+  }
   if (drag.global) {
     if (drag.prop === 'cutoff') window.a.setCutoff(newVal)
     else window.a.setScale(newVal)
@@ -56,7 +64,7 @@ function buildCols (el, count) {
   if (el.parentElement) el.parentElement.style.width = panelW + 'px'
 
   const canvases = []
-  const rows = Array.from({ length: count }, () => [null, null, null, null, null])
+  const rows = Array.from({ length: count }, () => [null, null, null, null, null, null])
 
   const appendSpacer = () => grid.appendChild(document.createElement('div'))
 
@@ -88,11 +96,12 @@ function buildCols (el, count) {
 
   // ── stat rows ────────────────────────────────────────────────────
   ;[
-    { label: 'raw', color: '#ccc', prop: null     },
-    { label: 'fft', color: '#888', prop: null     },
-    { label: 'cut', color: '#ff0', prop: 'cutoff' },
-    { label: 'scl', color: '#888', prop: 'scale'  },
-    { label: 'hz',  color: '#888', prop: null     },
+    { label: 'raw', color: '#ccc', prop: null            },
+    { label: 'fft', color: '#888', prop: null            },
+    { label: 'cut', color: '#ff0', prop: 'cutoff'        },
+    { label: 'scl', color: '#888', prop: 'scale'         },
+    { label: 'hz',  color: '#888', prop: null            },
+    { label: 'thr', color: '#f80', prop: 'fluxThreshold' },
   ].forEach(({ label, color, prop }, si) => {
     const scrubable = prop !== null
 
@@ -102,7 +111,7 @@ function buildCols (el, count) {
       `padding-left:2px;display:flex;align-items:center;user-select:none` +
       (scrubable ? ';cursor:ew-resize' : '')
     lbl.textContent = label
-    if (scrubable) {
+    if (scrubable && prop !== 'fluxThreshold') {
       lbl.addEventListener('mousedown', e => {
         if (!window.a) return
         drag.active   = true
@@ -258,6 +267,7 @@ function update (el) {
     cells[4].textContent = settings[i].minHz != null
       ? settings[i].minHz + '–' + settings[i].maxHz
       : '—'
+    cells[5].textContent = settings[i].fluxThreshold.toFixed(3)
 
     const cv = el._canvases[i]
     if (!cv) continue
@@ -290,6 +300,11 @@ function update (el) {
     ctx.moveTo(0, peakY)
     ctx.lineTo(cv.width, peakY)
     ctx.stroke()
+
+    if (window.a.onset && window.a.onset[i]) {
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, cv.height - 4, cv.width, 4)
+    }
   }
 }
 
@@ -299,7 +314,7 @@ module.exports = {
   key:    'a',
   zone:   'top-left',
   width:  LABEL_W + 4 * BIN_W + 18,  // default: 4 bins
-  height: 175,
+  height: 190,
   init,
   update,
 }
