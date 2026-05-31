@@ -17,6 +17,35 @@ const PerformanceUI = require('./performance-ui')
 const audioPanel = require('./panels/audio')
 const historyPanel = require('./panels/history')
 const snippetsPanel = require('./panels/snippets')
+const evalConsolePanel = require('./panels/eval-console')
+
+if (!window._consoleWrapped) {
+  window._consoleWrapped = true
+  window.evalErrors = []
+  ;['error', 'warn'].forEach(function (level) {
+    const orig = console[level].bind(console)
+    console[level] = function () {
+      const args = Array.prototype.slice.call(arguments)
+      try {
+        const message = args.map(function (a) {
+          if (a instanceof Error) return a.stack || a.message
+          if (typeof a === 'string') return a
+          return JSON.stringify(a)
+        }).join(' ')
+        window.evalErrors.push({ ts: new Date(), level: level, message: message, args: args })
+        if (window.evalErrors.length > 100) window.evalErrors = window.evalErrors.slice(-100)
+        const ui = window.performanceUI
+        if (ui && ui._panels) {
+          const entry = ui._panels.find(function (p) { return p.descriptor.id === 'eval-console' })
+          if (entry && entry.outerEl && entry.outerEl.style.display === 'none' && entry.btnEl) {
+            evalConsolePanel.flashButton(entry.btnEl)
+          }
+        }
+      } catch (_) { /* never let logging crash the app */ }
+      orig.apply(console, args)
+    }
+  })
+}
 
 //   const canvas = document.createElement('canvas')
 //   canvas.style.backgroundColor = "#000"
@@ -74,6 +103,7 @@ window.performanceUI = new PerformanceUI()
 window.performanceUI.register(audioPanel)
 window.performanceUI.register(historyPanel)
 window.performanceUI.register(snippetsPanel)
+window.performanceUI.register(evalConsolePanel)
 }
 
 function initEditor (editorValue) {
