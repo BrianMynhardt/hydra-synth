@@ -20,6 +20,9 @@ class Audio {
     this.max = max
     this.cutoff = cutoff
     this.smooth = smooth
+    this.brightness = 0
+    this.brightnessRaw = 0
+    this.brightnessSmooth = 0.5
     this.isBeat = false
     this._fftSize = fftSize
     this._makeGlobal = makeGlobal
@@ -124,7 +127,7 @@ class Audio {
         audioContext: this._context,
         source: sourceNode,
         bufferSize: this._fftSize,
-        featureExtractors: ['loudness', 'amplitudeSpectrum']
+        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid']
       })
       this._meyda.start()
     }
@@ -143,7 +146,7 @@ class Audio {
         audioContext: this._context,
         source: this._sourceNode,
         bufferSize: n,
-        featureExtractors: ['loudness', 'amplitudeSpectrum']
+        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid']
       })
     }
     this._prevSpectrum = null
@@ -193,6 +196,16 @@ class Audio {
         this.fft = this.bins.map((bin, index) => (
           Math.max(0, (bin - this.settings[index].cutoff) / this.settings[index].scale)
         ))
+        // spectral centroid → 0..1 "brightness" — see docs/IDEAS.md #9
+        const sc = features.spectralCentroid
+        if (Number.isFinite(sc) && this._context) {
+          const hz       = sc * this._context.sampleRate / this._fftSize
+          const nyquist  = this._context.sampleRate / 2
+          const normRaw  = Math.max(0, Math.min(1, hz / nyquist))
+          this.brightnessRaw = hz
+          this.brightness    = normRaw * (1 - this.brightnessSmooth) +
+                               this.brightness * this.brightnessSmooth
+        }
         const spec = features.amplitudeSpectrum
         if (spec && this._context) {
           if (!this._prevSpectrum || this._prevSpectrum.length !== spec.length) {
@@ -268,6 +281,9 @@ class Audio {
       this.bins.forEach((bin, index) => {
         window['a' + index] = (scale = 1, offset = 0) => () => (this.fft[index] * scale + offset)
       })
+      if (!window.br) {
+        window.br = (scale = 1, offset = 0) => () => (this.brightness * scale + offset)
+      }
     }
   }
 
