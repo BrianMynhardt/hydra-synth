@@ -23,6 +23,8 @@ class Audio {
     this.brightness = 0
     this.brightnessRaw = 0
     this.brightnessSmooth = 0.5
+    this.chroma = new Array(12).fill(0)
+    this.chromaSmooth = 0.4
     this.isBeat = false
     this._fftSize = fftSize
     this._makeGlobal = makeGlobal
@@ -127,7 +129,7 @@ class Audio {
         audioContext: this._context,
         source: sourceNode,
         bufferSize: this._fftSize,
-        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid']
+        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid', 'chroma']
       })
       this._meyda.start()
     }
@@ -146,7 +148,7 @@ class Audio {
         audioContext: this._context,
         source: this._sourceNode,
         bufferSize: n,
-        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid']
+        featureExtractors: ['loudness', 'amplitudeSpectrum', 'spectralCentroid', 'chroma']
       })
     }
     this._prevSpectrum = null
@@ -196,6 +198,14 @@ class Audio {
         this.fft = this.bins.map((bin, index) => (
           Math.max(0, (bin - this.settings[index].cutoff) / this.settings[index].scale)
         ))
+        const chroma = features.chroma
+        if (Array.isArray(chroma) && chroma.length === 12) {
+          const s = this.chromaSmooth
+          for (let i = 0; i < 12; i++) {
+            const v = Number.isFinite(chroma[i]) ? Math.max(0, Math.min(1, chroma[i])) : 0
+            this.chroma[i] = v * (1 - s) + this.chroma[i] * s
+          }
+        }
         // spectral centroid → 0..1 "brightness" — see docs/IDEAS.md #9
         const sc = features.spectralCentroid
         if (Number.isFinite(sc) && this._context) {
@@ -283,6 +293,11 @@ class Audio {
       })
       if (!window.br) {
         window.br = (scale = 1, offset = 0) => () => (this.brightness * scale + offset)
+      }
+      if (!window.ch0) {
+        for (let i = 0; i < 12; i++) {
+          window['ch' + i] = (scale = 1, offset = 0) => () => (this.chroma[i] * scale + offset)
+        }
       }
     }
   }

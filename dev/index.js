@@ -18,6 +18,7 @@ const audioPanel = require('./panels/audio')
 const historyPanel = require('./panels/history')
 const snippetsPanel = require('./panels/snippets')
 const evalConsolePanel = require('./panels/eval-console')
+const chromaPanel = require('./panels/chroma')
 
 if (!window._consoleWrapped) {
   window._consoleWrapped = true
@@ -104,6 +105,7 @@ window.performanceUI.register(audioPanel)
 window.performanceUI.register(historyPanel)
 window.performanceUI.register(snippetsPanel)
 window.performanceUI.register(evalConsolePanel)
+window.performanceUI.register(chromaPanel)
 }
 
 function initEditor (editorValue) {
