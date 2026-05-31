@@ -204,6 +204,14 @@ function init (el, titleBar) {
   el._tuneBtn = btn
   paintBtn(el, 'auto-tune')
 
+  const brtEl = document.createElement('span')
+  brtEl.style.cssText = 'font:11px monospace;color:#0ff;margin-right:6px'
+  brtEl.textContent = 'brt: —'
+  if (titleBar && titleBar.lastChild) {
+    titleBar.insertBefore(brtEl, titleBar.lastChild)
+  }
+  el._brtEl = brtEl
+
   const grid = document.createElement('div')
   grid.style.cssText = 'display:flex;flex-direction:column'
   el.appendChild(grid)
@@ -214,6 +222,9 @@ function init (el, titleBar) {
 
 function update (el) {
   if (!window.a || !el._rows) return
+  if (el._brtEl && typeof window.a.brightness === 'number') {
+    el._brtEl.textContent = 'brt: ' + window.a.brightness.toFixed(2)
+  }
   const { bins, fft, settings } = window.a
   if (!bins || !fft || !settings) return
 
