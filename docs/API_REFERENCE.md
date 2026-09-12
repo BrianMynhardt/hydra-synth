@@ -704,6 +704,17 @@ setBins(numBins)
 Sets the number of FFT bands. When `makeGlobal: true`, registers `window['a0']`–`window['aN']`
 as closures that return `() => (a.fft[index] * scale + offset)`.
 
+The same `_makeGlobal` block also installs (idempotently) the audio-signal factories
+`br(scale, offset)` (brightness), `ch0(scale, offset)`–`ch11(scale, offset)` (chroma),
+`tempo(scale, offset)` (detected BPM, `a.bpm`), `bp(scale, offset)` (beat phase,
+`a.beatPhase`), and `conf(scale, offset)` (tempo confidence, `a.bpmConfidence`).
+Each returns a `() => value` closure for use in transform parameters, e.g.
+`osc(20).rotate(0, () => a.beatPhase * 6.28).out()` or `osc(60).color(br(), 0, 0).out()`.
+
+> **Note:** `tempo()` / `a.bpm` is the audio-detected tempo and is **not** the same as the
+> numeric `bpm` global (default 30) used by array sequencing — see [The `synth` Object](#11-the-synth-object).
+> The factory is named `tempo` precisely to avoid overwriting that sequencing global.
+
 ### `Audio.prototype.setCutoff(cutoff)` / `setSmooth(smooth)` / `setScale(scale)`
 
 Update the corresponding per-bin setting uniformly across all bins.
@@ -721,7 +732,10 @@ Changes the Meyda buffer size. Recreates the analyser in-place if already initia
 
 Threshold-based beat detector. Sets `this.isBeat = true` and fires `this.onBeat()` when
 `level` exceeds the adaptive cutoff. Adaptive cutoff decays toward `beat.threshold` between
-beats.
+beats. Each beat also derives `a.bpmConfidence` from the coefficient of variation of the
+stored inter-beat intervals (low variance → high confidence) and uses it to adaptively lock
+`a.bpm`: low-confidence (sparse / syncopated) windows retain the prior tempo, high-confidence
+windows track new estimates at the normal `a.bpmSmooth` responsiveness.
 
 ### Public properties
 
@@ -733,6 +747,11 @@ beats.
 | `a.isBeat` | `boolean` | `true` for exactly one tick after the beat threshold is crossed |
 | `a.beat` | `object` | Beat config: `{ threshold, holdFrames, _cutoff, decay, _framesSinceBeat }` — kept for backwards compat; not the beat signal |
 | `a.onBeat` | `function` | Override to respond to beats: `a.onBeat = () => console.log('beat')` |
+| `a.bpm` | `number` | Audio-detected tempo (smoothed, `a.bpmSmooth` default 0.6); `0` until a beat is detected. Distinct from the `bpm` sequencing global below. |
+| `a.beatPhase` | `number` | Sawtooth ramp in [0, 1] across the current beat interval (`60000 / a.bpm` ms); resets toward 0 on each beat. |
+| `a.bpmConfidence` | `number` | Tempo confidence in [0, 1] derived from inter-beat interval variance; `0` until ≥3 beats. High when intervals are consistent; drives the adaptive lock on `a.bpm`. |
+| `a.brightness` | `number` | Spectral-centroid "brightness" in [0, 1] (smoothed); `a.brightnessRaw` is the raw Hz value. |
+| `a.chroma` | `number[]` | Per-pitch-class energy `[0..11]` (C..B), each in [0, 1] (smoothed by `a.chromaSmooth`). |
 
 ---
 
