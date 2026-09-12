@@ -32,6 +32,7 @@ class Audio {
     this.brightnessSmooth = 0.5
     this.chroma = new Array(12).fill(0)
     this.chromaSmooth = 0.4
+    this.chromaGate = 0.5 // silence cutoff in a.vol units; chroma decays below this
     this.isBeat = false
     this.bpm = 0
     this.bpmSmooth = 0.6
@@ -246,9 +247,10 @@ class Audio {
         const chroma = features.chroma
         if (Array.isArray(chroma) && chroma.length === 12) {
           const s = this.chromaSmooth
+          const g = Math.min(1, Math.max(0, (this.vol - this.chromaGate) / 4))
           for (let i = 0; i < 12; i++) {
             const v = Number.isFinite(chroma[i]) ? Math.max(0, Math.min(1, chroma[i])) : 0
-            this.chroma[i] = v * (1 - s) + this.chroma[i] * s
+            this.chroma[i] = (v * g) * (1 - s) + this.chroma[i] * s
           }
         }
         // spectral centroid → 0..1 "brightness" — see docs/IDEAS.md #9
