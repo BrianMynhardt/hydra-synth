@@ -2,12 +2,51 @@
 const Hydra = require('./../')
 // import Hydra from './../src/index.js'
 const loop = require('raf-loop')
-const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo, audioDemo } = require('./examples.js')
+const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo, audioDemo, tempoDemo } = require('./examples.js')
 
 // console.log('HYDRA', Hydra)
 // const HydraShaders = require('./../shader-generator.js')
 
 function init () {
+const resetStyle = document.createElement('style')
+resetStyle.textContent = 'html,body{margin:0;padding:0;overflow:hidden;width:100%;height:100%}canvas{display:block}'
+document.head.appendChild(resetStyle)
+
+window.evalHistory = []
+const PerformanceUI = require('./performance-ui')
+const audioPanel = require('./panels/audio')
+const historyPanel = require('./panels/history')
+const snippetsPanel = require('./panels/snippets')
+const evalConsolePanel = require('./panels/eval-console')
+const chromaPanel = require('./panels/chroma')
+
+if (!window._consoleWrapped) {
+  window._consoleWrapped = true
+  window.evalErrors = []
+  ;['error', 'warn'].forEach(function (level) {
+    const orig = console[level].bind(console)
+    console[level] = function () {
+      const args = Array.prototype.slice.call(arguments)
+      try {
+        const message = args.map(function (a) {
+          if (a instanceof Error) return a.stack || a.message
+          if (typeof a === 'string') return a
+          return JSON.stringify(a)
+        }).join(' ')
+        window.evalErrors.push({ ts: new Date(), level: level, message: message, args: args })
+        if (window.evalErrors.length > 100) window.evalErrors = window.evalErrors.slice(-100)
+        const ui = window.performanceUI
+        if (ui && ui._panels) {
+          const entry = ui._panels.find(function (p) { return p.descriptor.id === 'eval-console' })
+          if (entry && entry.outerEl && entry.outerEl.style.display === 'none' && entry.btnEl) {
+            evalConsolePanel.flashButton(entry.btnEl)
+          }
+        }
+      } catch (_) { /* never let logging crash the app */ }
+      orig.apply(console, args)
+    }
+  })
+}
 
 //   const canvas = document.createElement('canvas')
 //   canvas.style.backgroundColor = "#000"
@@ -55,12 +94,27 @@ foreground.layer(background.colorama(20)).out()
 
 //s0.initVideo("https://media.giphy.com/media/26ufplp8yheSKUE00/giphy.mp4", {})
 //src(s0).repeat().out()
-a.initStream()
+a.initStream()  // auto-start system-audio capture; tempoDemo() re-inits on click if this was blocked
+a.setBins(12)
+
+// Beat-locked performance demo — comment out to start from a blank canvas.
+tempoDemo()
+
 update = () => { document.title = hydra.synth.stats.fps + ' fps' }
+const _prevUpdate = update
+update = () => { _prevUpdate(); window.performanceUI && window.performanceUI.tick() }
+window.snippetBank = Array.from({length: 10}, (_, i) => localStorage.getItem('hydra-snippet-' + i))
 initEditor(defaultEditorValue)
+window.performanceUI = new PerformanceUI()
+window.performanceUI.register(audioPanel)
+window.performanceUI.register(historyPanel)
+window.performanceUI.register(snippetsPanel)
+window.performanceUI.register(evalConsolePanel)
+window.performanceUI.register(chromaPanel)
 }
 
 function initEditor (editorValue) {
+  let historyIndex = -1
   const editor = document.createElement('textarea')
   const style = editor.style
   style.position = 'fixed'
@@ -81,25 +135,39 @@ function initEditor (editorValue) {
   style.display = 'none'
 
   if(!editorValue){
-    editor.value = `
-        
-    
+    editor.value = localStorage.getItem('hydra-last-eval') || `
+
+
     shape(4, 0.5)
     .scale(0.5, 0.5, () => (a.fft[3] * 40 + 2) / 10)
     .out()
-    
+
     `
   }else{
-    editor.value = editorValue
+    editor.value = localStorage.getItem('hydra-last-eval') || editorValue
   }
-  
 
+  window._devEditor = editor
   document.body.appendChild(editor)
 
   document.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
+      const i = parseInt(e.key, 10)
+      const slot = window.snippetBank && window.snippetBank[i]
+      if (slot != null) {
+        e.preventDefault()
+        if (window._devEditor) window._devEditor.value = slot
+        editor.style.display = 'block'
+        editor.focus()
+        window.performanceUI && window.performanceUI.setVisible(true)
+      }
+      return
+    }
     if (e.key === 'Escape') {
       editor.style.display = editor.style.display === 'none' ? 'block' : 'none'
-      if (editor.style.display === 'block') editor.focus()
+      const open = editor.style.display === 'block'
+      if (open) editor.focus()
+      window.performanceUI && window.performanceUI.setVisible(open)
     }
   })
 
@@ -114,13 +182,34 @@ function initEditor (editorValue) {
   }
 
   editor.addEventListener('keydown', async (e) => {
+    if (e.altKey && e.shiftKey && /^[0-9]$/.test(e.key)) {
+      e.preventDefault()
+      const i = parseInt(e.key, 10)
+      window.snippetBank[i] = editor.value
+      localStorage.setItem('hydra-snippet-' + i, editor.value)
+      return
+    }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       try {
         eval(editor.value)
+        window.evalHistory.push({ code: editor.value, ts: new Date() })
+        window.evalHistory = window.evalHistory.slice(-50)
+        historyIndex = -1
+        localStorage.setItem('hydra-last-eval', editor.value)
       } catch (err) {
         console.error('[editor]', err)
       }
+    }
+    else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault()
+      if (window.evalHistory.length === 0) return
+      if (e.key === 'ArrowUp') {
+        historyIndex = Math.min(historyIndex + 1, window.evalHistory.length - 1)
+      } else {
+        historyIndex = Math.max(historyIndex - 1, 0)
+      }
+      editor.value = window.evalHistory[window.evalHistory.length - 1 - historyIndex].code
     }
     if (e.key === 'F' && e.shiftKey && e.altKey) {
       e.preventDefault()
@@ -137,6 +226,7 @@ function initEditor (editorValue) {
     if (e.key === 'Escape') {
       e.stopPropagation()
       editor.style.display = 'none'
+      window.performanceUI && window.performanceUI.setVisible(false)
     }
   })
 }

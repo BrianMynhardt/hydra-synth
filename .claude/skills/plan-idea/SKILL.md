@@ -19,6 +19,7 @@ If no summary is provided, use AskUserQuestion to ask: "What is the idea you wan
 - **Step-by-step plan** — ordered, atomic implementation steps with the specific file or function to touch at each step
 - **Risks and open questions** — unknowns, constraints, or decisions that need resolution before or during implementation
 - **Effort estimate** — rough sizing (small / medium / large) with a one-line rationale
+- **Plan file** — after user approval, a markdown file written to `dev/<slug>-plan.md`, structured for `/implement-plan`
 
 ## Instructions
 
@@ -42,9 +43,41 @@ If no summary is provided, use AskUserQuestion to ask: "What is the idea you wan
 
 10. Output an **Effort estimate**: size the work as small (< 2 hrs), medium (half-day), or large (multi-day), with a one-sentence justification.
 
+11. After presenting the full plan, stop and use AskUserQuestion to ask: "Ready to save this as a plan file for /implement-plan?" with options "Yes, save it" and "Not yet — I want to refine first". Do not proceed to step 12 until the user confirms.
+
+12. When the user confirms, derive a kebab-case filename slug from the idea summary (e.g. "Add low-pass filter" → `low-pass-filter`). The target path is `dev/<slug>-plan.md`.
+
+13. Write the plan file using the Write tool. Structure it as follows (use plain headings and bullets — no nested fenced code blocks):
+
+    ## Overview
+    One paragraph describing what this feature does and why.
+
+    ## Constraints
+    Bullet list of architectural constraints, patterns to follow, and out-of-scope items drawn from steps 4–5.
+    Include any open harness findings that must not be disturbed.
+
+    ## Acceptance Criteria
+    Bullet list of observable conditions that confirm the feature is complete.
+
+    ## Phase 1: <name>
+    Numbered list of atomic tasks. Each task names the file, the function or section, and the action.
+
+    ## Phase 2: <name>
+    (repeat for each logical phase)
+
+    ## Risks and Open Questions
+    Bullet list from step 9.
+
+    ## Verification
+    The shell command or manual steps to confirm the implementation is working (e.g. `npm test`, browser steps).
+
+14. Output a clickable markdown link to the saved file (relative path from repo root) and one sentence confirming it is ready to pass to `/implement-plan dev/<slug>-plan.md`.
+
 ## Constraints
 
-- Do not implement anything — this skill produces a plan only, no file edits
+- Do not implement anything — this skill produces a plan only, no file edits (except writing the plan file in step 13)
+- Do not write the plan file before the user confirms in step 11
 - Do not invent APIs or patterns not observed in the codebase
 - Do not skip the risks section even if no risks are apparent — state "No significant risks identified" explicitly
-- Keep the total output under 600 words; use bullets and short sentences over prose
+- Keep the conversational plan output under 600 words; use bullets and short sentences over prose
+- The plan file must not contain nested fenced code blocks

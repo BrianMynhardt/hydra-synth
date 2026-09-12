@@ -8,7 +8,9 @@ module.exports = {
   nonGlobalCanvas: nonGlobalCanvas,
   midiDemo: midiDemo,
   // demonstrates mic capture, stream switching, and FFT/beat-reactive visuals
-  audioDemo: audioDemo
+  audioDemo: audioDemo,
+  // performance demo: visuals locked to the beat via the tempo globals
+  tempoDemo: tempoDemo
 }
 
 function exampleResize() {
@@ -297,6 +299,32 @@ function audioDemo () {
     .out()
 
   a.setSmooth(0.8)
+}
+
+// Showcases driving visuals from the tempo trackers in a live set. Every
+// animated parameter below is bound to a tempo global, so the picture stays
+// locked to the music's beat:
+//   bp(scale, offset)   → beatPhase, a sawtooth that ramps 0→1 each beat
+//   tempoAuto / tempo   → detected BPM (autocorrelation / beat-derived)
+//   confAuto / conf     → estimator confidence, 0..1
+function tempoDemo () {
+  // Click once to grant system-audio capture — the trackers need sound.
+  // Skip if audio is already running (e.g. dev/index.js auto-started it).
+  document.addEventListener('click', () => { if (!a._meyda) a.initStream() }, { once: true })
+  a.setSmooth(0.85)
+
+  osc(() => a.bpmAuto / 4 + 10, 0.05, 1)
+    // one full turn per beat — 2π wraps seamlessly, so the snap-back is invisible
+    .rotate(bp(6.2832))
+    // more kaleidoscope segments at faster tempos
+    .kaleid(() => Math.round(a.bpmAuto / 24) + 3)
+    // zoom "punch": 1.25 on the beat, decaying to 1.0 just before the next
+    .scale(bp(-0.25, 1.25))
+    // colour saturates in as the autocorrelation tracker grows confident
+    .color(confAuto(1.4, 0.2), 0.5, 1)
+    // beat-synced feedback swirl off the previous frame
+    .modulateRotate(src(o0), bp(0.4))
+    .out()
 }
 
 function midiDemo () {
