@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hydra-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["budo", "./dev/index.js", "--live", "--port", "8000", "--", "-p", "esmify"],
+      "port": 8000
+    }
+  ]
+}
