@@ -2,7 +2,7 @@
 const Hydra = require('./../')
 // import Hydra from './../src/index.js'
 const loop = require('raf-loop')
-const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo, audioDemo } = require('./examples.js')
+const { fugitiveGeometry, exampleVideo, exampleResize, nonGlobalCanvas, midiDemo, audioDemo, tempoDemo } = require('./examples.js')
 
 // console.log('HYDRA', Hydra)
 // const HydraShaders = require('./../shader-generator.js')
@@ -94,7 +94,12 @@ foreground.layer(background.colorama(20)).out()
 
 //s0.initVideo("https://media.giphy.com/media/26ufplp8yheSKUE00/giphy.mp4", {})
 //src(s0).repeat().out()
-a.initStream()
+a.initStream()  // auto-start system-audio capture; tempoDemo() re-inits on click if this was blocked
+a.setBins(12)
+
+// Beat-locked performance demo — comment out to start from a blank canvas.
+tempoDemo()
+
 update = () => { document.title = hydra.synth.stats.fps + ' fps' }
 const _prevUpdate = update
 update = () => { _prevUpdate(); window.performanceUI && window.performanceUI.tick() }
