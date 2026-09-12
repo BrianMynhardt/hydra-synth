@@ -212,6 +212,14 @@ function init (el, titleBar) {
   }
   el._brtEl = brtEl
 
+  const bpmEl = document.createElement('span')
+  bpmEl.style.cssText = 'font:11px monospace;color:#0ff;margin-right:6px'
+  bpmEl.textContent = 'bpm: —'
+  if (titleBar && titleBar.lastChild) {
+    titleBar.insertBefore(bpmEl, titleBar.lastChild)
+  }
+  el._bpmEl = bpmEl
+
   const grid = document.createElement('div')
   grid.style.cssText = 'display:flex;flex-direction:column'
   el.appendChild(grid)
@@ -224,6 +232,18 @@ function update (el) {
   if (!window.a || !el._rows) return
   if (el._brtEl && typeof window.a.brightness === 'number') {
     el._brtEl.textContent = 'brt: ' + window.a.brightness.toFixed(2)
+  }
+  if (el._bpmEl && typeof window.a.bpm === 'number') {
+    // amplitude detector (refreshes only on detected beats) ·
+    // autocorrelation tracker (refreshes ~4x/sec, trustworthy for fast tempos)
+    let txt = 'bpm ' + Math.round(window.a.bpm)
+    if (typeof window.a.bpmAuto === 'number') {
+      txt += ' · auto ' + Math.round(window.a.bpmAuto)
+      if (typeof window.a.bpmAutoConfidence === 'number') {
+        txt += ' (' + window.a.bpmAutoConfidence.toFixed(2) + ')'
+      }
+    }
+    el._bpmEl.textContent = txt
   }
   const { bins, fft, settings } = window.a
   if (!bins || !fft || !settings) return
